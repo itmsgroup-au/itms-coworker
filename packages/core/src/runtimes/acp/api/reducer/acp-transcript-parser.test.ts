@@ -463,14 +463,30 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
-  it('does not group non-contiguous read tool calls', () => {
+  it('does not group reads separated by a search', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'read files'));
+    p.push(toolCallUpdate('read-1', 'Read src/a.ts', 'read'));
+    p.push(toolCallUpdate('search-1', 'Search foo', 'search'));
+    p.push(toolCallUpdate('read-2', 'Read src/b.ts', 'read'));
+
+    expect(p.activeTurn?.items.filter((i) => i.kind === 'tool-group')).toHaveLength(0);
+  });
+
+  it('folds consecutive reads and commands into one group with a combined label', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'read files'));
     p.push(toolCallUpdate('read-1', 'Read src/a.ts', 'read'));
     p.push(toolCallUpdate('exec-1', 'echo done', 'execute'));
     p.push(toolCallUpdate('read-2', 'Read src/b.ts', 'read'));
 
-    expect(p.activeTurn?.items.filter((i) => i.kind === 'tool-group')).toHaveLength(0);
+    const groups = p.activeTurn?.items.filter((i) => i.kind === 'tool-group') ?? [];
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      label: '2 file reads, 1 command',
+      groupKind: 'tool-batch',
+    });
+    expect((groups[0] as { children: unknown[] }).children).toHaveLength(3);
   });
 
   // ── File operation tool calls ─────────────────────────────────────────────

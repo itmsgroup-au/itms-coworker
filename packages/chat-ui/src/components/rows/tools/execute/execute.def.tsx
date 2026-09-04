@@ -170,7 +170,7 @@ function ExecuteUnitRender(props: { data: ChatExecute; ctx: RenderCtx; vars: Exe
       icon={<IconTerminal />}
       header={props.data.inputSummary || 'Execute'}
     >
-      <Show when={codeLineH() > 0}>
+      <Show when={codeLineH() > 0 && bodyGeometry().bodyH > 0}>
         <ExecuteBody
           item={props.data}
           lines={lines()}

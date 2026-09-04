@@ -512,30 +512,50 @@ function readGroupStatus(children: ToolNode[]): ToolStatus {
   return 'done';
 }
 
+/** Tool calls that fold into one collapsed line: file reads and commands. */
+function isQuietToolCall(item: TranscriptItem | ToolNode): boolean {
+  return item.kind === 'read-tool-call' || item.kind === 'execute-tool-call';
+}
+
+function quietGroupLabel(run: ToolNode[]): string {
+  const reads = run.filter((child) => child.kind === 'read-tool-call').length;
+  const commands = run.length - reads;
+  const parts: string[] = [];
+  if (reads) parts.push(`${reads} file read${reads === 1 ? '' : 's'}`);
+  if (commands) parts.push(`${commands} command${commands === 1 ? '' : 's'}`);
+  return parts.join(', ');
+}
+
+/**
+ * Fold consecutive file reads and commands into one collapsible group, so a
+ * turn that ran four commands reads as one line above the answer (ITMS,
+ * 4 Sep 2026). A run of reads only keeps the read-batch kind and label.
+ */
 function wrapReadGroups<T extends TranscriptItem | ToolNode>(items: T[]): Array<T | ToolGroup> {
   const result: Array<T | ToolGroup> = [];
   for (let i = 0; i < items.length; ) {
     const item = items[i];
-    if (item.kind !== 'read-tool-call') {
+    if (!isQuietToolCall(item)) {
       result.push(item);
       i += 1;
       continue;
     }
 
-    const run: ToolNode[] = [item];
+    const run: ToolNode[] = [item as ToolNode];
     let j = i + 1;
-    while (j < items.length && items[j].kind === 'read-tool-call') {
+    while (j < items.length && isQuietToolCall(items[j])) {
       run.push(items[j] as ToolNode);
       j += 1;
     }
 
     if (run.length > 1) {
+      const allReads = run.every((child) => child.kind === 'read-tool-call');
       result.push({
         kind: 'tool-group',
         id: makeToolGroupId(run[0].id),
         seq: run[0].seq,
-        label: `${run.length} file reads`,
-        groupKind: 'read-batch',
+        label: quietGroupLabel(run),
+        groupKind: allReads ? 'read-batch' : 'tool-batch',
         status: readGroupStatus(run),
         children: run,
       });
