@@ -101,17 +101,33 @@ export async function writeProfilesFile(profiles: OdooProfile[]): Promise<{ path
   return { path: ODOO_PROFILES_PATH };
 }
 
-async function jsonRpc(url: string, params: Record<string, unknown>, timeoutMs = 15000) {
+/**
+ * Odoo's external RPC endpoint (/jsonrpc, services common and object). This is
+ * the one that accepts API keys as the password; /web/session/authenticate only
+ * takes a real password, which is why "Access Denied" appeared on itms19.
+ */
+async function odooRpc(
+  base: string,
+  service: 'common' | 'object',
+  method: string,
+  args: unknown[],
+  timeoutMs = 15000
+): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${base}/jsonrpc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: Date.now(), params }),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'call',
+        id: Date.now(),
+        params: { service, method, args },
+      }),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status} from ${base}/jsonrpc`);
     const body = (await response.json()) as {
       result?: unknown;
       error?: { message?: string; data?: { message?: string } };
@@ -129,26 +145,34 @@ export async function testConnection(profile: OdooProfile): Promise<OdooConnecti
   const started = Date.now();
   try {
     const base = profile.url.replace(/\/+$/, '');
-    const version = (await jsonRpc(`${base}/web/webclient/version_info`, {})) as {
-      server_version?: string;
-    };
-    const auth = (await jsonRpc(`${base}/web/session/authenticate`, {
-      db: profile.db,
-      login: profile.user,
-      password: profile.password,
-    })) as { uid?: number | false; name?: string; username?: string } | null;
-    if (!auth || !auth.uid) {
+    const version = (await odooRpc(base, 'common', 'version', [])) as { server_version?: string };
+    const uid = (await odooRpc(base, 'common', 'authenticate', [
+      profile.db,
+      profile.user,
+      profile.password,
+      {},
+    ])) as number | false;
+    if (!uid) {
       return {
         ok: false,
-        error: `Login refused for ${profile.user} on database ${profile.db}`,
+        error: `Login refused for ${profile.user} on database ${profile.db} (password or API key)`,
         durationMs: Date.now() - started,
       };
     }
+    const users = (await odooRpc(base, 'object', 'execute_kw', [
+      profile.db,
+      uid,
+      profile.password,
+      'res.users',
+      'read',
+      [[uid]],
+      { fields: ['name'] },
+    ])) as Array<{ name?: string }>;
     return {
       ok: true,
       serverVersion: version.server_version ?? 'unknown',
-      uid: auth.uid,
-      userName: auth.name ?? auth.username ?? profile.user,
+      uid,
+      userName: users[0]?.name ?? profile.user,
       durationMs: Date.now() - started,
     };
   } catch (error) {
