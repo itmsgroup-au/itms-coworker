@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [odoo, settings]
 created: "2026-09-04T19:33:04"
-updated: "2026-09-04T19:33:04"
+updated: "2026-09-04T19:49:53"
 ---
 
 <!-- compiled_truth -->
@@ -24,4 +24,10 @@ Mark asked (4 Sep 2026) for a Settings section to hold the Odoo server an agent 
   kind: decision
   summary: "Settings key odoo + wire domain odoo; profiles round-trip with ~/.odoo-profiles.json"
   source: brain update-truth
+  affects: [decision-odoo-profiles-in-settings]
+
+- time: 2026-09-04T19:49:53
+  kind: evidence
+  summary: "First real use, 4 Sep 2026: (1) description limit 200 rejected profile 17 (229 chars) and the failed save was silent; limits raised, imports trim, errors toasted. (2) 21 sequential op item get calls overran the 30 s wire timeout; now six at a time. (3) 'Access Denied' on itms19: /web/session/authenticate takes only a real password, the vault holds an API key; the test now uses /jsonrpc common.version + common.authenticate + res.users read, verified against odoo.itmsgroup.com.au (19.0+e, uid 10)."
+  source: session 2026-09-04
   affects: [decision-odoo-profiles-in-settings]
