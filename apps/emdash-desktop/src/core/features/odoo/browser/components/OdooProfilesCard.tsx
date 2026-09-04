@@ -1,6 +1,6 @@
 import { SettingsCard, SettingsRow, SettingsSection } from '@emdash/ui/react/patterns';
 import { Badge, Button, Input, Select, SeparatedList, toast } from '@emdash/ui/react/primitives';
-import { Check, Download, Pencil, Plug, Plus, Trash2, Upload, X } from 'lucide-react';
+import { Check, Download, KeyRound, Pencil, Plug, Plus, Trash2, Upload, X } from 'lucide-react';
 import { useState } from 'react';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
@@ -16,7 +16,7 @@ type TestState =
 const EMPTY_DRAFT: Draft = { name: '', url: 'https://', db: '', user: '', password: '' };
 
 export function OdooProfilesCard() {
-  const { value, update, isLoading, isSaving } = useAppSettingsKey('odoo');
+  const { value, update, updateAsync, isLoading, isSaving } = useAppSettingsKey('odoo');
   const openConfirm = useOpenModal('confirmActionModal');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -86,6 +86,54 @@ export function OdooProfilesCard() {
     }
   };
 
+  const mergeProfiles = async (incoming: OdooProfile[], source: string, skipped: string[]) => {
+    // Merge by name: a server already listed is refreshed, a new one is appended.
+    const byName = new Map(profiles.map((profile) => [profile.name.toLowerCase(), profile]));
+    const taken = new Set(profiles.map((profile) => profile.id));
+    for (const profile of incoming) {
+      const existing = byName.get(profile.name.toLowerCase());
+      if (existing) {
+        byName.set(profile.name.toLowerCase(), { ...profile, id: existing.id });
+        continue;
+      }
+      let id = profile.id;
+      let suffix = 2;
+      while (taken.has(id)) id = `${profile.id}-${suffix++}`;
+      taken.add(id);
+      byName.set(profile.name.toLowerCase(), { ...profile, id });
+    }
+    const next = [...byName.values()];
+    try {
+      await updateAsync({
+        profiles: next,
+        defaultProfileId: defaultProfileId ?? next[0]?.id ?? null,
+      });
+      toast(`Imported ${incoming.length} server(s) from ${source}`, {
+        description: skipped.length ? `Skipped: ${skipped.join(', ')}` : undefined,
+      });
+    } catch (error) {
+      toast.error('Could not save the imported servers', { description: message(error) });
+    }
+  };
+
+  const importOnePassword = async () => {
+    setBusy(true);
+    try {
+      const result = await (await getOdooClient()).readProfilesFromOnePassword({});
+      if (result.profiles.length === 0) {
+        toast.error('No items tagged odoo-profile found', { description: result.source });
+        return;
+      }
+      await mergeProfiles(result.profiles, result.source, result.skipped);
+    } catch (error) {
+      toast.error('1Password import failed', {
+        description: `${message(error)}. Is the 1Password app unlocked and the CLI integration on?`,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const importFile = async () => {
     setBusy(true);
     try {
@@ -94,11 +142,7 @@ export function OdooProfilesCard() {
         toast.error(`No file at ${file.path}`);
         return;
       }
-      const byId = new Map(profiles.map((profile) => [profile.id, profile]));
-      for (const profile of file.profiles) byId.set(profile.id, profile);
-      const next = [...byId.values()];
-      update({ profiles: next, defaultProfileId: defaultProfileId ?? next[0]?.id ?? null });
-      toast(`Imported ${file.profiles.length} profile(s) from ${file.path}`);
+      await mergeProfiles(file.profiles, file.path, []);
     } catch (error) {
       toast.error('Import failed', { description: message(error) });
     } finally {
@@ -160,8 +204,9 @@ export function OdooProfilesCard() {
       <SettingsSection title="Odoo servers" bare>
         <SettingsCard>
           <div className="text-xs text-foreground-passive">
-            One entry per Odoo server, the same shape as ~/.odoo-profiles.json. Test checks the
-            version and logs in over JSON-RPC.
+            One entry per Odoo server. The source of truth is 1Password: items tagged odoo-profile
+            in the AI_MCP vault, titled &quot;odoo - name&quot;. Test checks the version and logs in
+            over JSON-RPC.
           </div>
 
           <div className="mt-2 flex flex-col divide-y divide-border/40">
@@ -290,6 +335,17 @@ export function OdooProfilesCard() {
               >
                 <Plus className="size-4" />
                 Add server
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-foreground-muted"
+                disabled={disabled}
+                onClick={() => void importOnePassword()}
+              >
+                <KeyRound className="size-4" />
+                Import from 1Password
               </Button>
               <Button
                 type="button"

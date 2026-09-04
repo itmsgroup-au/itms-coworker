@@ -1,8 +1,16 @@
+import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
-import type { OdooConnectionTestResult, OdooProfilesFile } from '../api/contract';
+import type {
+  OdooConnectionTestResult,
+  OdooProfilesFile,
+  OdooProfilesSource,
+} from '../api/contract';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * ~/.odoo-profiles.json is a map of profile name to
@@ -51,16 +59,23 @@ export async function readProfilesFile(): Promise<OdooProfilesFile> {
     return { path: ODOO_PROFILES_PATH, exists: false, profiles: [] };
   }
   const parsed = JSON.parse(raw) as Record<string, FileProfile>;
-  const profiles: OdooProfile[] = Object.entries(parsed).map(([name, entry]) => ({
-    id: profileIdFromName(name),
-    name,
-    url: urlFromFileProfile(entry),
-    db: entry.db ?? '',
-    user: entry.user ?? '',
-    password: entry.password ?? '',
-    description: entry.description,
-    odooVersion: entry.odoo_version ? String(entry.odoo_version) : undefined,
-  }));
+  const taken = new Set<string>();
+  const profiles: OdooProfile[] = Object.entries(parsed).map(([name, entry]) => {
+    let id = profileIdFromName(name);
+    let suffix = 2;
+    while (taken.has(id)) id = `${profileIdFromName(name)}-${suffix++}`;
+    taken.add(id);
+    return {
+      id,
+      name,
+      url: urlFromFileProfile(entry),
+      db: entry.db ?? '',
+      user: entry.user ?? '',
+      password: entry.password ?? '',
+      description: entry.description,
+      odooVersion: entry.odoo_version ? String(entry.odoo_version) : undefined,
+    };
+  });
   return { path: ODOO_PROFILES_PATH, exists: true, profiles };
 }
 
@@ -140,4 +155,87 @@ export async function testConnection(profile: OdooProfile): Promise<OdooConnecti
       durationMs: Date.now() - started,
     };
   }
+}
+
+/**
+ * 1Password is the source of truth for Odoo servers: one item per server in the
+ * vault, tagged `odoo-profile`, with the same custom fields as
+ * ~/.odoo-profiles.json (url, host, port, db, user, password, odoo_version,
+ * description). The title is "odoo - <name>". Read through the `op` CLI, which
+ * signs in through the 1Password desktop app.
+ */
+const OP_CANDIDATES = ['/opt/homebrew/bin/op', '/usr/local/bin/op', 'op'];
+
+async function op(args: string[]): Promise<string> {
+  let lastError: unknown;
+  for (const bin of OP_CANDIDATES) {
+    try {
+      const { stdout } = await execFileAsync(bin, args, {
+        maxBuffer: 16 * 1024 * 1024,
+        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ''}` },
+      });
+      return stdout;
+    } catch (error) {
+      lastError = error;
+      const code = (error as { code?: string }).code;
+      if (code !== 'ENOENT') throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('1Password CLI (op) not found');
+}
+
+type OpField = { id?: string; label?: string; value?: string; type?: string };
+type OpItem = { id: string; title: string; category?: string; fields?: OpField[] };
+
+function field(item: OpItem, ...labels: string[]): string {
+  for (const label of labels) {
+    const hit = item.fields?.find((f) => (f.label ?? f.id ?? '').toLowerCase() === label);
+    if (hit?.value) return hit.value;
+  }
+  return '';
+}
+
+export async function readProfilesFromOnePassword(vault = 'AI_MCP'): Promise<OdooProfilesSource> {
+  const list = JSON.parse(
+    await op(['item', 'list', '--vault', vault, '--tags', 'odoo-profile', '--format', 'json'])
+  ) as OpItem[];
+  const profiles: OdooProfile[] = [];
+  const skipped: string[] = [];
+  const taken = new Set<string>();
+  for (const summary of list) {
+    const item = JSON.parse(
+      await op(['item', 'get', summary.id, '--vault', vault, '--format', 'json', '--reveal'])
+    ) as OpItem;
+    const name = item.title.replace(/^odoo\s*-\s*/i, '').trim() || item.title;
+    const entry: FileProfile = {
+      url: field(item, 'url', 'website'),
+      host: field(item, 'host', 'hostname'),
+      port: field(item, 'port'),
+      db: field(item, 'db', 'database'),
+      user: field(item, 'user', 'username'),
+      password: field(item, 'password', 'credential'),
+      odoo_version: field(item, 'odoo_version'),
+      description: field(item, 'description'),
+    };
+    const url = urlFromFileProfile(entry);
+    if (!url || !entry.db || !entry.user) {
+      skipped.push(`${item.title} (missing url, db or user)`);
+      continue;
+    }
+    let id = profileIdFromName(name);
+    let suffix = 2;
+    while (taken.has(id)) id = `${profileIdFromName(name)}-${suffix++}`;
+    taken.add(id);
+    profiles.push({
+      id,
+      name,
+      url,
+      db: entry.db,
+      user: entry.user,
+      password: entry.password ?? '',
+      description: entry.description || undefined,
+      odooVersion: entry.odoo_version || undefined,
+    });
+  }
+  return { source: `1Password vault ${vault}, tag odoo-profile`, profiles, skipped };
 }

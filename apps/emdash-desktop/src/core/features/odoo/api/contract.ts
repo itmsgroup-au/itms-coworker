@@ -8,6 +8,12 @@ export type OdooConnectionTestResult =
   | { ok: true; serverVersion: string; uid: number; userName: string; durationMs: number }
   | { ok: false; error: string; durationMs: number };
 
+export type OdooProfilesSource = {
+  source: string;
+  profiles: OdooProfile[];
+  skipped: string[];
+};
+
 export type OdooProfilesFile = {
   path: string;
   exists: boolean;
@@ -19,6 +25,11 @@ export const odooContract = defineContract({
   testConnection: procedure({
     input: z.custom<OdooProfile>(),
     output: z.custom<OdooConnectionTestResult>(),
+  }),
+  /** Read every 1Password item tagged odoo-profile in the vault (default AI_MCP). */
+  readProfilesFromOnePassword: procedure({
+    input: z.object({ vault: z.string().optional() }),
+    output: z.custom<OdooProfilesSource>(),
   }),
   /** Read ~/.odoo-profiles.json (the file atlas and the odoo CLI use). */
   readProfilesFile: procedure({ input: z.void(), output: z.custom<OdooProfilesFile>() }),
