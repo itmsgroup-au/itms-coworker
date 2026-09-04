@@ -166,6 +166,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Reusable remote hosts for SSH projects.',
     keywords: ['remote', 'host'],
   },
+  {
+    id: 'odoo-profiles',
+    label: 'Odoo servers',
+    tab: 'odoo',
+    description: 'Odoo server profiles the ITMS CoWorker agents work against.',
+    keywords: ['odoo', 'erp', 'profile', 'itms', 'database'],
+  },
 
   // Repository
   {

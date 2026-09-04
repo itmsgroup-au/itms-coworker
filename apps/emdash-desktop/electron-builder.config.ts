@@ -3,8 +3,6 @@ import {
   APP_ID,
   ARTIFACT_PREFIX,
   PRODUCT_NAME,
-  R2_BASE_URL,
-  UPDATE_CHANNEL,
 } from './src/core/primitives/app-identity/api/app-identity.ts';
 
 const config: Configuration = {
@@ -13,19 +11,8 @@ const config: Configuration = {
   executableName: PRODUCT_NAME,
   directories: { output: 'release' },
   artifactName: `${ARTIFACT_PREFIX}-\${arch}.\${ext}`,
-  publish: [
-    {
-      provider: 'github',
-      owner: 'generalaction',
-      repo: 'emdash',
-      releaseType: 'draft',
-    },
-    {
-      provider: 'generic',
-      url: R2_BASE_URL,
-      channel: UPDATE_CHANNEL,
-    },
-  ],
+  // Fork: no publish target. Upstream's GitHub releases and R2 channel must never update this build.
+  publish: [],
   generateUpdatesFilesForAllChannels: false,
   files: ['out/**/*', 'node_modules/**/*', 'drizzle/**/*'],
   asarUnpack: [

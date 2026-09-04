@@ -25,6 +25,7 @@ import { resolveDetailLevels, type ResolvedDetailLevel } from './settings-detail
 
 const LOCAL_SECTION: PageNavSection = { kind: 'section', id: 'local', label: 'Local' };
 const REMOTE_SECTION: PageNavSection = { kind: 'section', id: 'remote', label: 'Remote' };
+const ITMS_SECTION: PageNavSection = { kind: 'section', id: 'itms', label: 'ITMS' };
 const SETTINGS_SEARCH_HOTKEY = chord('Mod+F');
 
 const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
@@ -43,6 +44,8 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('skills'),
   REMOTE_SECTION,
   navItemFor('connections'),
+  ITMS_SECTION,
+  navItemFor('odoo'),
 ];
 
 function navItemFor(id: Exclude<SettingsPageTab, 'docs'>): PageNavItem {

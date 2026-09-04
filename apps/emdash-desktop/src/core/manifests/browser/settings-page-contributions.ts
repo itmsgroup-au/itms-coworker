@@ -6,6 +6,7 @@ import {
   systemSettingsPage,
 } from '@core/features/machines/contributions/settings-page';
 import { mcpSettingsPage } from '@core/features/mcp/contributions/settings-page';
+import { odooSettingsPage } from '@core/features/odoo/contributions/settings-page';
 import {
   agentsSettingsPage,
   browserSettingsPage,
@@ -32,4 +33,5 @@ export const settingsPageContributions = [
   mcpSettingsPage,
   skillsSettingsPage,
   machinesConnectionsPage,
+  odooSettingsPage,
 ] as const satisfies readonly SettingsPageContribution<Exclude<SettingsPageTab, 'docs'>>[];

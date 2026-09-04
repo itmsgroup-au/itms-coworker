@@ -77,6 +77,28 @@ export type BrowserSettings = {
 
 export type KeyboardSettings = Record<string, string | null | undefined>;
 
+/**
+ * One Odoo server an agent can work against. Same shape as ~/.odoo-profiles.json
+ * (the file atlas and the odoo CLI read), so a profile round-trips between
+ * ITMS CoWorker and the command line unchanged. The password is stored in the
+ * local settings database; move it to the keychain before any shared build.
+ */
+export type OdooProfile = {
+  id: string;
+  name: string;
+  url: string;
+  db: string;
+  user: string;
+  password: string;
+  description?: string;
+  odooVersion?: string;
+};
+
+export type OdooSettings = {
+  defaultProfileId: string | null;
+  profiles: OdooProfile[];
+};
+
 export type OpenInSettings = {
   default: OpenInAppId;
   hidden: OpenInAppId[];

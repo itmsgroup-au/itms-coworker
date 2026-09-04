@@ -2,7 +2,7 @@ import type { PluginIconAsset } from '@emdash/shared/plugins';
 
 export const icon: PluginIconAsset = {
   kind: 'image',
-  alt: 'Hermes Agent CLI',
+  alt: 'ITMS CoWorker',
   variants: [
     {
       minSize: 0,

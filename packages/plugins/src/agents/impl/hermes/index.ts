@@ -9,10 +9,10 @@ import { icon } from './icon';
 export const plugin = definePlugin(
   {
     id: 'hermes',
-    name: 'Hermes Agent',
+    name: 'ITMS CoWorker',
     description:
-      'Nous Research terminal agent with interactive chat, model-provider routing, skills, and session workflows.',
-    websiteUrl: 'https://hermes-agent.nousresearch.com/docs/',
+      'ITMS CoWorker: the ITMS Hermes agent (Bruce, Ric, Worker) on its own machine, with the atlas estate tools, the data lake skills and Odoo.',
+    websiteUrl: 'https://github.com/itmsgroup-au/itms-coworker',
   },
   {
     acp: {
