@@ -6,13 +6,13 @@ export const odooProfileIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
 export const odooProfileSchema = z.object({
   id: odooProfileIdSchema,
-  name: z.string().trim().min(1).max(60),
+  name: z.string().trim().min(1).max(120),
   url: z.string().trim().url(),
-  db: z.string().trim().min(1).max(120),
-  user: z.string().trim().min(1).max(120),
-  password: z.string().max(400),
-  description: z.string().max(200).optional(),
-  odooVersion: z.string().max(20).optional(),
+  db: z.string().trim().min(1).max(200),
+  user: z.string().trim().min(1).max(200),
+  password: z.string().max(2000),
+  description: z.string().max(2000).optional(),
+  odooVersion: z.string().max(40).optional(),
 });
 
 const odooSettingsSchema = z

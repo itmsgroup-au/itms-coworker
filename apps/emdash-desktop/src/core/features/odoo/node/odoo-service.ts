@@ -31,6 +31,9 @@ type FileProfile = {
 
 export const ODOO_PROFILES_PATH = path.join(os.homedir(), '.odoo-profiles.json');
 
+const clip = (value: string | undefined, max: number) =>
+  value && value.trim() ? value.trim().slice(0, max) : undefined;
+
 export function profileIdFromName(name: string): string {
   const slug = name
     .trim()
@@ -233,8 +236,8 @@ export async function readProfilesFromOnePassword(vault = 'AI_MCP'): Promise<Odo
       db: entry.db,
       user: entry.user,
       password: entry.password ?? '',
-      description: entry.description || undefined,
-      odooVersion: entry.odoo_version || undefined,
+      description: clip(entry.description, 2000),
+      odooVersion: clip(entry.odoo_version, 40),
     });
   }
   return { source: `1Password vault ${vault}, tag odoo-profile`, profiles, skipped };
