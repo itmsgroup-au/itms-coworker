@@ -20,7 +20,14 @@ export type OdooProfilesFile = {
   profiles: OdooProfile[];
 };
 
+export type OdooProjectFolder = { path: string; created: boolean; name: string };
+
 export const odooContract = defineContract({
+  /** Make (or refresh) the local project folder that pairs with a profile. */
+  prepareProject: procedure({
+    input: z.custom<OdooProfile>(),
+    output: z.custom<OdooProjectFolder>(),
+  }),
   /** JSON-RPC version_info + authenticate against the server named in the profile. */
   testConnection: procedure({
     input: z.custom<OdooProfile>(),

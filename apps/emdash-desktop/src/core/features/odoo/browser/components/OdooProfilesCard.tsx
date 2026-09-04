@@ -1,11 +1,25 @@
 import { SettingsCard, SettingsRow, SettingsSection } from '@emdash/ui/react/patterns';
 import { Badge, Button, Input, Select, SeparatedList, toast } from '@emdash/ui/react/primitives';
-import { Check, Download, KeyRound, Pencil, Plug, Plus, Trash2, Upload, X } from 'lucide-react';
+import {
+  Check,
+  Download,
+  FolderOpen,
+  KeyRound,
+  Pencil,
+  Plug,
+  Plus,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
+import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
+import { projectViewDef } from '@core/features/projects/contributions/views';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
+import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 
 type Draft = Omit<OdooProfile, 'id'> & { id?: string };
 type TestState =
@@ -18,6 +32,7 @@ const EMPTY_DRAFT: Draft = { name: '', url: 'https://', db: '', user: '', passwo
 export function OdooProfilesCard() {
   const { value, update, updateAsync, isLoading, isSaving } = useAppSettingsKey('odoo');
   const openConfirm = useOpenModal('confirmActionModal');
+  const { navigate } = useNavigate();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [busy, setBusy] = useState(false);
@@ -116,6 +131,33 @@ export function OdooProfilesCard() {
     }
   };
 
+  /** The project paired with a server: made on demand, opened if it already exists. */
+  const openProject = async (profile: OdooProfile) => {
+    setBusy(true);
+    try {
+      const folder = await (await getOdooClient()).prepareProject(profile);
+      const result = await getProjectManagerStore().startProjectCreation(
+        { type: 'local' },
+        { mode: 'pick', name: folder.name, path: folder.path, initGitRepository: false }
+      );
+      if (result.kind === 'existing') {
+        navigate(projectViewDef({ projectId: result.projectId }));
+        return;
+      }
+      const completion = await result.completion;
+      if (!completion.success) {
+        toast.error('Could not open the project', { description: String(completion.error) });
+        return;
+      }
+      toast(folder.created ? `Project created at ${folder.path}` : `Project opened`);
+      navigate(projectViewDef({ projectId: result.projectId }));
+    } catch (error) {
+      toast.error('Could not open the project', { description: message(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const importOnePassword = async () => {
     setBusy(true);
     try {
@@ -176,11 +218,15 @@ export function OdooProfilesCard() {
         <SeparatedList gap="1rem" direction="column">
           <SettingsRow
             label="Default Odoo server"
-            description="The server an agent works against unless a task says otherwise. Passed to the agent as ODOO_PROFILE."
+            description="The server an agent works against unless a task says otherwise. Choosing one opens its project in the left-hand list; the folder carries an AGENTS.md naming the server and ODOO_PROFILE."
             control={
               <Select.Root
                 value={defaultProfileId ?? ''}
-                onValueChange={(next) => update({ defaultProfileId: next || null })}
+                onValueChange={(next) => {
+                  update({ defaultProfileId: next || null });
+                  const chosen = profiles.find((profile) => profile.id === next);
+                  if (chosen) void openProject(chosen);
+                }}
                 disabled={disabled || profiles.length === 0}
               >
                 <Select.Trigger className="w-[220px] shrink-0 gap-2">
@@ -222,6 +268,16 @@ export function OdooProfilesCard() {
                       </span>
                     </span>
                     {profile.id === defaultProfileId && <Badge>default</Badge>}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled}
+                      onClick={() => void openProject(profile)}
+                    >
+                      <FolderOpen className="size-4" />
+                      Project
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"

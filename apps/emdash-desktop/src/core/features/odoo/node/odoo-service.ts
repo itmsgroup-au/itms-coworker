@@ -8,6 +8,7 @@ import type {
   OdooConnectionTestResult,
   OdooProfilesFile,
   OdooProfilesSource,
+  OdooProjectFolder,
 } from '../api/contract';
 
 const execFileAsync = promisify(execFile);
@@ -278,4 +279,77 @@ export async function readProfilesFromOnePassword(vault = 'AI_MCP'): Promise<Odo
     });
   }
   return { source: `1Password vault ${vault}, tag odoo-profile`, profiles, skipped };
+}
+
+/**
+ * A project folder for one Odoo server, so a task can start the moment a
+ * server is chosen. ~/ITMS CoWorker/odoo-<id>/ with an AGENTS.md that tells
+ * the agent which server it is on and to reach it through `atlas odoo
+ * --profile <name>`. The password never goes in the folder: atlas reads it
+ * from ~/.odoo-profiles.json or 1Password.
+ */
+export async function prepareProjectFolder(profile: OdooProfile): Promise<OdooProjectFolder> {
+  const root = path.join(os.homedir(), 'ITMS CoWorker');
+  const dir = path.join(root, `odoo-${profile.id}`);
+  let created = false;
+  try {
+    await fs.access(dir);
+  } catch {
+    await fs.mkdir(dir, { recursive: true });
+    created = true;
+  }
+  const agents = `# Odoo server: ${profile.name}
+
+This project is paired with one Odoo server. Every question or change is about this
+server unless the task says otherwise.
+
+- Name: ${profile.name}
+- URL: ${profile.url}
+- Database: ${profile.db}
+- User: ${profile.user}
+${profile.odooVersion ? `- Odoo version: ${profile.odooVersion}\n` : ''}${profile.description ? `- Notes: ${profile.description}\n` : ''}
+## How to reach it
+
+Use the atlas CLI, which holds the credential itself:
+
+    atlas odoo --profile ${profile.name} models --json
+    atlas odoo --profile ${profile.name} fields res.partner --json
+    atlas odoo --profile ${profile.name} count res.partner --domain '[["is_company","=",true]]'
+    atlas odoo --profile ${profile.name} export res.partner --fields name,email --limit 50
+
+\`atlas commands --json\` lists every verb. Read before you write. Any create, write,
+module install or upgrade is shown to the person and confirmed first.
+
+The environment variable ODOO_PROFILE=${profile.name} names this server too.
+
+Never print or copy the password or API key. It is not in this folder on purpose.
+`;
+  await fs.writeFile(path.join(dir, 'AGENTS.md'), agents);
+  await fs.writeFile(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
+  await fs.writeFile(
+    path.join(dir, '.env'),
+    `ODOO_PROFILE=${profile.name}\nODOO_URL=${profile.url}\nODOO_DB=${profile.db}\n`
+  );
+  try {
+    await fs.access(path.join(dir, '.git'));
+  } catch {
+    await execFileAsync('git', ['init', '-q'], { cwd: dir });
+    await fs.writeFile(path.join(dir, '.gitignore'), '.env\n');
+    await execFileAsync('git', ['add', '-A'], { cwd: dir });
+    await execFileAsync(
+      'git',
+      [
+        '-c',
+        'user.name=ITMS CoWorker',
+        '-c',
+        'user.email=coworker@itmsgroup.com.au',
+        'commit',
+        '-q',
+        '-m',
+        `Odoo project for ${profile.name}`,
+      ],
+      { cwd: dir }
+    );
+  }
+  return { path: dir, created, name: `Odoo · ${profile.name}` };
 }
