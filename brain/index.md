@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-09-04T13:02:34.686Z._
+_Auto-generated. Last updated 2026-09-04T13:08:17.714Z._
 
 - [decision-odoo-profiles-in-settings](pages/decision-odoo-profiles-in-settings.md) — category: decision | tags: [odoo, settings] | Mark asked (4 Sep 2026) for a Settings section to hold the Odoo server an agent works against, with profiles like ~/.odoo-profiles.json. Dec
 - [decision-project-per-odoo-server](pages/decision-project-per-odoo-server.md) — category: decision | tags: [odoo, projects] | Mark, 4 Sep 2026: 'I'm expecting that we could have a default left hand project automatically created and paired to the selected server so y

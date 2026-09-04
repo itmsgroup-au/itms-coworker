@@ -35,7 +35,7 @@ const EXECUTE_VARS: ExecuteVars = {
   linePadX: 12,
   scrollbarSize: 8,
   scrollbarGap: 3,
-  collapsedMaxLines: 2,
+  collapsedMaxLines: 0, // ITMS: a collapsed command shows its header only; the arrow expands it
   expandedMaxLines: 16,
 };
 
