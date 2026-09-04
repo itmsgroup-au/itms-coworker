@@ -202,13 +202,26 @@ export async function readProfilesFromOnePassword(vault = 'AI_MCP'): Promise<Odo
   const list = JSON.parse(
     await op(['item', 'list', '--vault', vault, '--tags', 'odoo-profile', '--format', 'json'])
   ) as OpItem[];
+  // One `op item get` per server, six at a time: 21 sequential calls took longer
+  // than the 30 s wire timeout (4 Sep 2026).
+  const items: OpItem[] = [];
+  const queue = [...list];
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        items.push(
+          JSON.parse(
+            await op(['item', 'get', next.id, '--vault', vault, '--format', 'json', '--reveal'])
+          ) as OpItem
+        );
+      }
+    })
+  );
+  items.sort((a, b) => a.title.localeCompare(b.title));
   const profiles: OdooProfile[] = [];
   const skipped: string[] = [];
   const taken = new Set<string>();
-  for (const summary of list) {
-    const item = JSON.parse(
-      await op(['item', 'get', summary.id, '--vault', vault, '--format', 'json', '--reveal'])
-    ) as OpItem;
+  for (const item of items) {
     const name = item.title.replace(/^odoo\s*-\s*/i, '').trim() || item.title;
     const entry: FileProfile = {
       url: field(item, 'url', 'website'),
