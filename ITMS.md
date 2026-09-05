@@ -55,6 +55,24 @@ cd apps/emdash-desktop && pnpm run package:mac
     the nav in `src/core/features/settings/browser/components/SettingsPage.tsx`, and the
     Cmd+F index in `src/core/features/settings/browser/search/settings-search.ts`.
 
+- **No GitHub sign-in.** `src/renderer/App.tsx` no longer adds the `sign-in` onboarding step.
+  The legacy-import step still runs when there is something to import.
+- **Tasks (Odoo Helpdesk).** Sidebar item "Tasks" above Search, view id `helpdesk`, all under
+  `apps/emdash-desktop/src/core/features/helpdesk/`:
+  - `contributions/views.ts`: the view (`team` narrows to one team, `all` lists every ticket).
+  - `browser/helpdesk-view.tsx`, `browser/components/HelpdeskPage.tsx`: the team overview
+    (open tickets, agents working) and the All tickets list grouped by team then assignee.
+    The Agent column assigns a worker plus a project and creates the task with the ticket
+    as its first prompt; the pill shows the live task status (Working, Needs you, Done).
+  - `contributions/settings.ts`: settings key `helpdesk` holding the assignments
+    (`${profileId}:${ticketId}` → project, task, provider).
+  - `api/browser/use-helpdesk.ts`: react-query hooks over the Odoo wire domain.
+  - The Odoo wire domain (`features/odoo`) gained `executeKw`, `helpdeskTeams`,
+    `helpdeskTickets`; the `uid` is cached per profile in `node/odoo-service.ts`.
+  - Registered in `manifests/browser/view-catalog.ts`, `manifests/browser/browser-contributions.ts`,
+    `manifests/shared/settings-contributions.ts`, and the telemetry unions in
+    `primitives/telemetry/api/telemetry.ts` (a new view id must be added there too).
+
 ## Adding another Settings section (the recipe)
 
 1. Add the id to `settingsPageTabSchema` in `features/settings/contributions/views.ts`.
@@ -87,3 +105,7 @@ The Odoo feature is the smallest complete example of all five steps.
 - Machines: pre-fill from the datasets tenants manifests.
 - Named agents (Bruce, Ric, Worker) instead of provider CLIs; project becomes client, task
   becomes job, for non-developers.
+- Tasks page: ticket detail pane with chatter, "Related information" (customer, previous
+  tickets, mail, files, RMM), a persistent status bar for the working agent, and writing the
+  agent's result back to the Odoo ticket as a note (needs a write path; today the wire calls
+  are read-only).
