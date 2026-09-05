@@ -1,7 +1,9 @@
+import { MicroLabel } from '@emdash/ui/react/primitives';
 import { Clock, FolderInput, MessageSquareShare, Settings, Ticket } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { HelpdeskOpenCount } from '@core/features/helpdesk/contributions/browser/open-count';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
@@ -58,6 +60,29 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       <SidebarSpace />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col">
+          <SidebarGroup className="mb-0">
+            <div className="flex h-[40px] items-center pl-5">
+              <MicroLabel className="font-medium text-foreground-tertiary-passive">
+                Tasks
+              </MicroLabel>
+            </div>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuButton
+                  isActive={isCurrentView(currentView, 'helpdesk')}
+                  onClick={() => navigate(helpdeskViewDef({}))}
+                  aria-label="Helpdesk"
+                  className="w-full justify-between"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Ticket className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                    <span className="truncate">Helpdesk</span>
+                  </span>
+                  <HelpdeskOpenCount />
+                </SidebarMenuButton>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
           <SidebarPinnedTaskList />
           <SidebarGroup className="mb-0 flex min-h-0 flex-1 flex-col">
             <ProjectsGroupLabel />
@@ -70,17 +95,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'helpdesk')}
-              onClick={() => navigate(helpdeskViewDef({}))}
-              aria-label="Tasks"
-              className="w-full justify-between"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Ticket className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Tasks</span>
-              </span>
-            </SidebarMenuButton>
             <SidebarSearchTrigger />
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'automations')}

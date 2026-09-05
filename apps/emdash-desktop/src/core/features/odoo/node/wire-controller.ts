@@ -2,6 +2,9 @@ import { createController, type Controller } from '@emdash/wire/rpc';
 import { odooContract } from '../api';
 import {
   executeKw,
+  helpdeskMessages,
+  helpdeskPostNote,
+  helpdeskRelated,
   helpdeskTeams,
   helpdeskTickets,
   prepareProjectFolder,
@@ -21,6 +24,9 @@ export function createOdooWireController(): Controller {
     executeKw: ({ profile, model, method, args, kwargs }) =>
       executeKw(profile, model, method, args, kwargs ?? {}),
     helpdeskTeams: ({ profile }) => helpdeskTeams(profile),
+    helpdeskMessages: ({ profile, ticketId }) => helpdeskMessages(profile, ticketId),
+    helpdeskRelated: ({ profile, ticketId }) => helpdeskRelated(profile, ticketId),
+    helpdeskPostNote: ({ profile, ticketId, body }) => helpdeskPostNote(profile, ticketId, body),
     helpdeskTickets: ({ profile, teamId, limit }) => helpdeskTickets(profile, { teamId, limit }),
   });
 }

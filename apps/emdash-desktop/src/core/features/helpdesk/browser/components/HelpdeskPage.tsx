@@ -35,6 +35,7 @@ import {
   useNavigate,
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
+import { TicketDetail } from './TicketDetail';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -46,6 +47,8 @@ export const HelpdeskPage = observer(function HelpdeskPage() {
   const { navigate } = useNavigate();
   const teamId = params.team;
   const showList = params.all === true || teamId !== undefined;
+  const selectedTicketId = params.ticket ?? null;
+  const select = (id: number | null) => setParams((prev) => ({ ...prev, ticket: id ?? undefined }));
 
   if (isLoading) return null;
   if (!profile) {
@@ -63,12 +66,24 @@ export const HelpdeskPage = observer(function HelpdeskPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-6">
+    <div
+      className={cn(
+        'flex h-full flex-col bg-background text-foreground',
+        showList ? 'overflow-hidden' : 'overflow-y-auto'
+      )}
+    >
+      <div
+        className={cn(
+          'mx-auto flex w-full flex-1 flex-col px-6 py-6',
+          showList ? 'min-h-0 max-w-none' : 'max-w-7xl'
+        )}
+      >
         {showList ? (
           <TicketList
             profile={profile}
             teamId={teamId}
+            selectedTicketId={selectedTicketId}
+            onSelect={select}
             onBack={() => setParams({})}
             onPickTeam={(id) => setParams(id === null ? { all: true } : { team: id })}
           />
@@ -199,11 +214,15 @@ function Stat({ value, label, accent }: { value: number; label: string; accent?:
 const TicketList = observer(function TicketList({
   profile,
   teamId,
+  selectedTicketId,
+  onSelect,
   onBack,
   onPickTeam,
 }: {
   profile: OdooProfile;
   teamId: number | undefined;
+  selectedTicketId: number | null;
+  onSelect: (ticketId: number | null) => void;
   onBack: () => void;
   onPickTeam: (teamId: number | null) => void;
 }) {
@@ -216,6 +235,7 @@ const TicketList = observer(function TicketList({
 
   const groups = useMemo(() => groupTickets(tickets.data ?? []), [tickets.data]);
   const teamName = teams.data?.find((t) => t.id === teamId)?.name;
+  const selectedTicket = tickets.data?.find((t) => t.id === selectedTicketId) ?? null;
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
@@ -229,7 +249,7 @@ const TicketList = observer(function TicketList({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <PageHeader
         title={teamName ? `${teamName} tickets` : 'All tickets'}
         subtitle={`${profile.name} · ${tickets.data?.length ?? 0} open`}
@@ -261,91 +281,108 @@ const TicketList = observer(function TicketList({
       />
       {tickets.error && <ErrorLine error={tickets.error} />}
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[960px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
-              <th className="w-20 px-3 py-2">Priority</th>
-              <th className="w-32 px-3 py-2">Stage</th>
-              <th className="w-56 px-3 py-2">Customer</th>
-              <th className="w-36 px-3 py-2">Assigned to</th>
-              <th className="px-3 py-2">Name</th>
-              <th className="w-64 px-3 py-2">Agent</th>
-              <th className="w-24 px-3 py-2 text-right">SLA</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((team) => {
-              const teamKey = `t:${team.key}`;
-              const teamOpen = !collapsed[teamKey];
-              return (
-                <GroupRows key={teamKey}>
-                  <GroupHeader
-                    depth={0}
-                    label={`${team.label} (${team.count})`}
-                    open={teamOpen}
-                    onToggle={() => toggle(teamKey)}
-                  />
-                  {teamOpen &&
-                    team.children.map((who) => {
-                      const whoKey = `${teamKey}/${who.key}`;
-                      const whoOpen = !collapsed[whoKey];
-                      return (
-                        <GroupRows key={whoKey}>
-                          <GroupHeader
-                            depth={1}
-                            label={`${who.label} (${who.count})`}
-                            open={whoOpen}
-                            onToggle={() => toggle(whoKey)}
-                          />
-                          {whoOpen &&
-                            who.tickets.map((ticket) => {
-                              const assignment =
-                                assignments[assignmentKey(profile.id, ticket.id)] ?? null;
-                              return (
-                                <TicketRowGroup key={ticket.id}>
-                                  <TicketRow
-                                    ticket={ticket}
-                                    assignment={assignment}
-                                    onAssign={() => setAssigning(ticket.id)}
-                                    onUnassign={() => clearAssignment(ticket.id)}
-                                  />
-                                  {assigning === ticket.id && (
-                                    <AssignRow
-                                      profile={profile}
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border border-border">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
+                <th className="w-20 px-3 py-2">Priority</th>
+                <th className="w-32 px-3 py-2">Stage</th>
+                <th className="w-56 px-3 py-2">Customer</th>
+                <th className="w-36 px-3 py-2">Assigned to</th>
+                <th className="px-3 py-2">Name</th>
+                <th className="w-64 px-3 py-2">Agent</th>
+                <th className="w-24 px-3 py-2 text-right">SLA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((team) => {
+                const teamKey = `t:${team.key}`;
+                const teamOpen = !collapsed[teamKey];
+                return (
+                  <GroupRows key={teamKey}>
+                    <GroupHeader
+                      depth={0}
+                      label={`${team.label} (${team.count})`}
+                      open={teamOpen}
+                      onToggle={() => toggle(teamKey)}
+                    />
+                    {teamOpen &&
+                      team.children.map((who) => {
+                        const whoKey = `${teamKey}/${who.key}`;
+                        const whoOpen = !collapsed[whoKey];
+                        return (
+                          <GroupRows key={whoKey}>
+                            <GroupHeader
+                              depth={1}
+                              label={`${who.label} (${who.count})`}
+                              open={whoOpen}
+                              onToggle={() => toggle(whoKey)}
+                            />
+                            {whoOpen &&
+                              who.tickets.map((ticket) => {
+                                const assignment =
+                                  assignments[assignmentKey(profile.id, ticket.id)] ?? null;
+                                return (
+                                  <TicketRowGroup key={ticket.id}>
+                                    <TicketRow
                                       ticket={ticket}
-                                      onCancel={() => setAssigning(null)}
-                                      onAssigned={(a) => {
-                                        saveAssignment(a);
-                                        setAssigning(null);
-                                      }}
+                                      assignment={assignment}
+                                      selected={ticket.id === selectedTicketId}
+                                      onSelect={() =>
+                                        onSelect(ticket.id === selectedTicketId ? null : ticket.id)
+                                      }
+                                      onAssign={() => setAssigning(ticket.id)}
+                                      onUnassign={() => clearAssignment(ticket.id)}
                                     />
-                                  )}
-                                </TicketRowGroup>
-                              );
-                            })}
-                        </GroupRows>
-                      );
-                    })}
-                </GroupRows>
-              );
-            })}
-            {tickets.isLoading && (
-              <tr>
-                <td colSpan={7} className="px-3 py-4 text-foreground-muted">
-                  Loading tickets…
-                </td>
-              </tr>
-            )}
-            {!tickets.isLoading && groups.length === 0 && !tickets.error && (
-              <tr>
-                <td colSpan={7} className="px-3 py-4 text-foreground-muted">
-                  No open tickets.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                                    {assigning === ticket.id && (
+                                      <AssignRow
+                                        profile={profile}
+                                        ticket={ticket}
+                                        onCancel={() => setAssigning(null)}
+                                        onAssigned={(a) => {
+                                          saveAssignment(a);
+                                          setAssigning(null);
+                                        }}
+                                      />
+                                    )}
+                                  </TicketRowGroup>
+                                );
+                              })}
+                          </GroupRows>
+                        );
+                      })}
+                  </GroupRows>
+                );
+              })}
+              {tickets.isLoading && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-4 text-foreground-muted">
+                    Loading tickets…
+                  </td>
+                </tr>
+              )}
+              {!tickets.isLoading && groups.length === 0 && !tickets.error && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-4 text-foreground-muted">
+                    No open tickets.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {selectedTicket && (
+          <div className="w-[460px] shrink-0 overflow-hidden rounded-lg border border-border bg-background">
+            <TicketDetail
+              profile={profile}
+              ticket={selectedTicket}
+              assignment={assignments[assignmentKey(profile.id, selectedTicket.id)] ?? null}
+              onClose={() => onSelect(null)}
+              onAssign={() => setAssigning(selectedTicket.id)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -388,18 +425,28 @@ function GroupHeader({
 const TicketRow = observer(function TicketRow({
   ticket,
   assignment,
+  selected,
+  onSelect,
   onAssign,
   onUnassign,
 }: {
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
+  selected: boolean;
+  onSelect: () => void;
   onAssign: () => void;
   onUnassign: () => void;
 }) {
   const sla = ticket.slaDeadline ? formatDay(ticket.slaDeadline) : '';
   const slaLate = ticket.slaDeadline ? new Date(ticket.slaDeadline) < new Date() : false;
   return (
-    <tr className="border-b border-border hover:bg-background-secondary/40">
+    <tr
+      className={cn(
+        'cursor-pointer border-b border-border hover:bg-background-secondary/40',
+        selected && 'bg-accent/10 hover:bg-accent/10'
+      )}
+      onClick={onSelect}
+    >
       <td className="px-3 py-2">
         <Stars value={ticket.priority} />
       </td>
@@ -423,7 +470,7 @@ const TicketRow = observer(function TicketRow({
         <span className="mr-2 text-xs text-foreground-muted">#{ticket.ref}</span>
         {ticket.name}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
         <AgentCell assignment={assignment} onAssign={onAssign} onUnassign={onUnassign} />
       </td>
       <td className={cn('px-3 py-2 text-right', slaLate && 'text-red-500')}>{sla}</td>
@@ -607,7 +654,10 @@ const AssignRow = observer(function AssignRow({
   };
 
   return (
-    <tr className="border-b border-border bg-background-secondary/40">
+    <tr
+      className="border-b border-border bg-background-secondary/40"
+      onClick={(e) => e.stopPropagation()}
+    >
       <td colSpan={7} className="px-3 py-3">
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Worker">

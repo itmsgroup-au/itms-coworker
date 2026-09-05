@@ -12,6 +12,7 @@ export const helpdeskViewDef = defineView({
   params: z.object({
     team: z.number().optional(),
     all: z.boolean().optional(),
+    ticket: z.number().optional(),
   }),
   layout: workbenchLayout,
   telemetryEvent: 'helpdesk_viewed',

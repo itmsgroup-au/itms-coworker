@@ -5,6 +5,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
 import type {
+  HelpdeskMessage,
+  HelpdeskRelated,
   HelpdeskTeam,
   HelpdeskTicket,
   OdooConnectionTestResult,
@@ -491,4 +493,131 @@ export async function helpdeskTickets(
     updatedAt: r.write_date as string,
     description: htmlToText(r.description as string | false).slice(0, 4000),
   }));
+}
+
+/** The chatter of one ticket, oldest first: emails, comments and internal notes, not system tracking. */
+export async function helpdeskMessages(
+  profile: OdooProfile,
+  ticketId: number
+): Promise<HelpdeskMessage[]> {
+  const rows = (await executeKw(
+    profile,
+    'mail.message',
+    'search_read',
+    [
+      [
+        ['model', '=', 'helpdesk.ticket'],
+        ['res_id', '=', ticketId],
+        ['message_type', 'in', ['email', 'comment', 'email_outgoing']],
+      ],
+    ],
+    {
+      fields: [
+        'id',
+        'date',
+        'author_id',
+        'email_from',
+        'body',
+        'message_type',
+        'subtype_id',
+        'subject',
+      ],
+      order: 'date asc',
+      limit: 200,
+    }
+  )) as Array<Record<string, unknown>>;
+  return rows.map((r) => {
+    const subtype = m2oName(r.subtype_id as Many2one);
+    return {
+      id: r.id as number,
+      date: r.date as string,
+      author: m2oName(r.author_id as Many2one) || (r.email_from as string | false) || '',
+      subject: (r.subject as string | false) || '',
+      body: htmlToText(r.body as string | false).slice(0, 6000),
+      kind:
+        subtype === 'Note'
+          ? 'note'
+          : (r.message_type as string) === 'comment'
+            ? 'message'
+            : 'email',
+    };
+  });
+}
+
+/** What else the practice knows about the ticket's customer: the contact and their other tickets. */
+export async function helpdeskRelated(
+  profile: OdooProfile,
+  ticketId: number
+): Promise<HelpdeskRelated> {
+  const [ticket] = (await executeKw(profile, 'helpdesk.ticket', 'read', [[ticketId]], {
+    fields: ['partner_id', 'commercial_partner_id', 'partner_email', 'partner_phone'],
+  })) as Array<Record<string, unknown>>;
+  const partnerId = m2oId((ticket?.partner_id as Many2one) ?? false);
+  const companyId = m2oId((ticket?.commercial_partner_id as Many2one) ?? false) ?? partnerId;
+  if (!companyId) {
+    return {
+      contact: null,
+      company: '',
+      email: '',
+      phone: '',
+      previousTickets: [],
+      openTickets: 0,
+    };
+  }
+  const tickets = (await executeKw(
+    profile,
+    'helpdesk.ticket',
+    'search_read',
+    [
+      [
+        ['id', '!=', ticketId],
+        ['partner_id', 'child_of', companyId],
+      ],
+    ],
+    {
+      fields: ['id', 'ticket_ref', 'name', 'stage_id', 'create_date', 'user_id'],
+      order: 'create_date desc',
+      limit: 15,
+    }
+  )) as Array<Record<string, unknown>>;
+  const openCount = (await executeKw(profile, 'helpdesk.ticket', 'search_count', [
+    [
+      ['id', '!=', ticketId],
+      ['partner_id', 'child_of', companyId],
+      ['stage_id.fold', '=', false],
+    ],
+  ])) as number;
+  return {
+    contact: m2oName((ticket?.partner_id as Many2one) ?? false) || null,
+    company: m2oName((ticket?.commercial_partner_id as Many2one) ?? false),
+    email: (ticket?.partner_email as string | false) || '',
+    phone: (ticket?.partner_phone as string | false) || '',
+    openTickets: openCount,
+    previousTickets: tickets.map((t) => ({
+      id: t.id as number,
+      ref: (t.ticket_ref as string | false) || String(t.id),
+      name: (t.name as string) ?? '',
+      stage: m2oName(t.stage_id as Many2one),
+      assignee: m2oName(t.user_id as Many2one),
+      createdAt: t.create_date as string,
+    })),
+  };
+}
+
+/** Add an internal note to a ticket. The only write the app makes, and it is a note, not a change. */
+export async function helpdeskPostNote(
+  profile: OdooProfile,
+  ticketId: number,
+  body: string
+): Promise<{ messageId: number }> {
+  const html = body
+    .split('\n')
+    .map((line) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+    .join('<br/>');
+  const id = (await executeKw(profile, 'helpdesk.ticket', 'message_post', [[ticketId]], {
+    body: `<p>${html}</p>`,
+    message_type: 'comment',
+    subtype_xmlid: 'mail.mt_note',
+  })) as number;
+  return { messageId: id };
 }

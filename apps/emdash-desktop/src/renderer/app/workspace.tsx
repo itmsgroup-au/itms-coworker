@@ -1,4 +1,5 @@
 import { Toaster } from '@emdash/ui/react/primitives';
+import { CoWorkerStatusBar } from '@core/features/helpdesk/contributions/browser/status-bar';
 import { LeftSidebar } from '@core/features/workbench/browser/sidebar/left-sidebar';
 import { WindowScope } from '@core/features/workbench/browser/window-scope';
 import {
@@ -18,14 +19,19 @@ export function Workspace() {
     <WindowScope>
       <BrowserShortcutForwarding />
       <KeybindingDispatcherMount />
-      <WorkspaceLayout
-        leftSidebar={<LeftSidebar />}
-        mainContent={
-          <WrapView {...params}>
-            <WorkspaceContentLayout titlebarSlot={<TitlebarSlot />} mainPanel={<MainPanel />} />
-          </WrapView>
-        }
-      />
+      <div className="flex h-full flex-col">
+        <div className="min-h-0 flex-1">
+          <WorkspaceLayout
+            leftSidebar={<LeftSidebar />}
+            mainContent={
+              <WrapView {...params}>
+                <WorkspaceContentLayout titlebarSlot={<TitlebarSlot />} mainPanel={<MainPanel />} />
+              </WrapView>
+            }
+          />
+        </div>
+        <CoWorkerStatusBar />
+      </div>
       <Toaster />
     </WindowScope>
   );

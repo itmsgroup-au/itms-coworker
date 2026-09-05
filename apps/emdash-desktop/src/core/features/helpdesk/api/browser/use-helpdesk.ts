@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
-import type { HelpdeskTeam, HelpdeskTicket } from '@core/features/odoo/api/contract';
+import type {
+  HelpdeskMessage,
+  HelpdeskRelated,
+  HelpdeskTeam,
+  HelpdeskTicket,
+} from '@core/features/odoo/api/contract';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
 
@@ -37,4 +42,33 @@ export function useHelpdeskTickets(profile: OdooProfile | null, teamId?: number)
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
   });
+}
+
+export function useHelpdeskMessages(profile: OdooProfile | null, ticketId: number | null) {
+  return useQuery<HelpdeskMessage[], Error>({
+    queryKey: [...HELPDESK_QUERY_KEY, 'messages', profile?.id ?? 'none', ticketId ?? 0],
+    enabled: !!profile && ticketId !== null,
+    queryFn: async () => {
+      if (!profile || ticketId === null) return [];
+      return (await getOdooClient()).helpdeskMessages({ profile, ticketId });
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useHelpdeskRelated(profile: OdooProfile | null, ticketId: number | null) {
+  return useQuery<HelpdeskRelated, Error>({
+    queryKey: [...HELPDESK_QUERY_KEY, 'related', profile?.id ?? 'none', ticketId ?? 0],
+    enabled: !!profile && ticketId !== null,
+    queryFn: async () => {
+      if (!profile || ticketId === null) throw new Error('No ticket');
+      return (await getOdooClient()).helpdeskRelated({ profile, ticketId });
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Add an internal note to the ticket; the caller invalidates the messages query. */
+export async function postHelpdeskNote(profile: OdooProfile, ticketId: number, body: string) {
+  return (await getOdooClient()).helpdeskPostNote({ profile, ticketId, body });
 }

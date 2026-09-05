@@ -45,6 +45,33 @@ export type HelpdeskTicket = {
   description: string;
 };
 
+export type HelpdeskMessage = {
+  id: number;
+  date: string;
+  author: string;
+  subject: string;
+  body: string;
+  kind: 'email' | 'message' | 'note';
+};
+
+export type HelpdeskRelatedTicket = {
+  id: number;
+  ref: string;
+  name: string;
+  stage: string;
+  assignee: string;
+  createdAt: string;
+};
+
+export type HelpdeskRelated = {
+  contact: string | null;
+  company: string;
+  email: string;
+  phone: string;
+  openTickets: number;
+  previousTickets: HelpdeskRelatedTicket[];
+};
+
 export const odooContract = defineContract({
   /** Make (or refresh) the local project folder that pairs with a profile. */
   prepareProject: procedure({
@@ -87,6 +114,21 @@ export const odooContract = defineContract({
       limit: z.number().optional(),
     }),
     output: z.custom<HelpdeskTicket[]>(),
+  }),
+  /** The chatter of one ticket, oldest first. */
+  helpdeskMessages: procedure({
+    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number() }),
+    output: z.custom<HelpdeskMessage[]>(),
+  }),
+  /** The customer behind a ticket and their other tickets. */
+  helpdeskRelated: procedure({
+    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number() }),
+    output: z.custom<HelpdeskRelated>(),
+  }),
+  /** Add an internal note to a ticket (the app's only Odoo write). */
+  helpdeskPostNote: procedure({
+    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number(), body: z.string() }),
+    output: z.custom<{ messageId: number }>(),
   }),
   /** Write the given profiles to ~/.odoo-profiles.json, replacing it. */
   writeProfilesFile: procedure({
