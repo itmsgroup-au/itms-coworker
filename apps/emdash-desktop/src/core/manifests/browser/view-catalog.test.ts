@@ -14,6 +14,7 @@ describe('viewCatalog', () => {
       'project',
       'task',
       'settings',
+      'helpdesk',
     ]);
   });
 
@@ -63,6 +64,7 @@ describe('viewCatalog', () => {
       project: 'project_viewed',
       task: 'task_viewed',
       settings: 'settings_viewed',
+      helpdesk: 'helpdesk_viewed',
     });
   });
 });

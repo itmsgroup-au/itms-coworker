@@ -115,6 +115,23 @@ export function createMainWindow(): BrowserWindow {
     });
   });
 
+  // ITMS: renderer errors land in the main log, so a white screen leaves a trace
+  // in .emdash-logs/emdash.log instead of needing DevTools.
+  mainWindow.webContents.on('console-message', (event) => {
+    if (event.level !== 'error') return;
+    log.error('renderer console', {
+      message: event.message,
+      source: event.sourceId,
+      line: event.lineNumber,
+    });
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error('renderer gone', { reason: details.reason, exitCode: details.exitCode });
+  });
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, url) => {
+    log.error('renderer failed to load', { code, description, url });
+  });
+
   // Track window focus for telemetry
   mainWindow.on('focus', () => {
     telemetryService.capture('app_window_focused');
