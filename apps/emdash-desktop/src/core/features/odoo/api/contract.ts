@@ -22,6 +22,29 @@ export type OdooProfilesFile = {
 
 export type OdooProjectFolder = { path: string; created: boolean; name: string };
 
+export type HelpdeskTeam = { id: number; name: string; description: string; open: number };
+
+export type HelpdeskTicket = {
+  id: number;
+  ref: string;
+  name: string;
+  teamId: number | null;
+  team: string;
+  stageId: number | null;
+  stage: string;
+  customer: string;
+  assigneeId: number | null;
+  assignee: string;
+  /** Odoo priority 0-3, shown as stars. */
+  priority: number;
+  slaDeadline: string | null;
+  kanbanState: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Plain text, capped at 4000 characters. */
+  description: string;
+};
+
 export const odooContract = defineContract({
   /** Make (or refresh) the local project folder that pairs with a profile. */
   prepareProject: procedure({
@@ -40,6 +63,31 @@ export const odooContract = defineContract({
   }),
   /** Read ~/.odoo-profiles.json (the file atlas and the odoo CLI use). */
   readProfilesFile: procedure({ input: z.void(), output: z.custom<OdooProfilesFile>() }),
+  /** Any model method through object.execute_kw. Read-only use from the renderer. */
+  executeKw: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string(),
+      method: z.string(),
+      args: z.array(z.unknown()),
+      kwargs: z.record(z.string(), z.unknown()).optional(),
+    }),
+    output: z.unknown(),
+  }),
+  /** Helpdesk teams with open-ticket counts. */
+  helpdeskTeams: procedure({
+    input: z.object({ profile: z.custom<OdooProfile>() }),
+    output: z.custom<HelpdeskTeam[]>(),
+  }),
+  /** Open helpdesk tickets, newest activity first, optionally one team. */
+  helpdeskTickets: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      teamId: z.number().optional(),
+      limit: z.number().optional(),
+    }),
+    output: z.custom<HelpdeskTicket[]>(),
+  }),
   /** Write the given profiles to ~/.odoo-profiles.json, replacing it. */
   writeProfilesFile: procedure({
     input: z.object({ profiles: z.custom<OdooProfile[]>() }),

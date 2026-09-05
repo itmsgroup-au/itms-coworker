@@ -99,6 +99,23 @@ export type OdooSettings = {
   profiles: OdooProfile[];
 };
 
+/** One helpdesk ticket handed to an agent: the ITMS CoWorker task that is working it. */
+export type HelpdeskAssignment = {
+  profileId: string;
+  ticketId: number;
+  ticketRef: string;
+  ticketName: string;
+  projectId: string;
+  taskId: string;
+  provider: string;
+  assignedAt: string;
+};
+
+export type HelpdeskSettings = {
+  /** Keyed by `${profileId}:${ticketId}`. */
+  assignments: Record<string, HelpdeskAssignment>;
+};
+
 export type OpenInSettings = {
   default: OpenInAppId;
   hidden: OpenInAppId[];

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
 import type {
+  HelpdeskTeam,
+  HelpdeskTicket,
   OdooConnectionTestResult,
   OdooProfilesFile,
   OdooProfilesSource,
@@ -107,7 +109,7 @@ export async function writeProfilesFile(profiles: OdooProfile[]): Promise<{ path
  * the one that accepts API keys as the password; /web/session/authenticate only
  * takes a real password, which is why "Access Denied" appeared on itms19.
  */
-async function odooRpc(
+export async function odooRpc(
   base: string,
   service: 'common' | 'object',
   method: string,
@@ -352,4 +354,141 @@ Never print or copy the password or API key. It is not in this folder on purpose
     );
   }
   return { path: dir, created, name: `Odoo · ${profile.name}` };
+}
+
+// ---------------------------------------------------------------------------
+// Generic execute_kw and the Helpdesk readers
+// ---------------------------------------------------------------------------
+
+const uidCache = new Map<string, number>();
+
+/** Authenticate once per profile (url + db + user + password) and cache the uid. */
+async function odooUid(profile: OdooProfile): Promise<number> {
+  const base = profile.url.replace(/\/+$/, '');
+  const key = `${base}|${profile.db}|${profile.user}|${profile.password}`;
+  const cached = uidCache.get(key);
+  if (cached) return cached;
+  const uid = (await odooRpc(base, 'common', 'authenticate', [
+    profile.db,
+    profile.user,
+    profile.password,
+    {},
+  ])) as number | false;
+  if (!uid) {
+    throw new Error(
+      `Login refused for ${profile.user} on database ${profile.db} (password or API key)`
+    );
+  }
+  uidCache.set(key, uid);
+  return uid;
+}
+
+/** object.execute_kw for any model and method. Read-only callers only; writes stay with atlas. */
+export async function executeKw(
+  profile: OdooProfile,
+  model: string,
+  method: string,
+  args: unknown[],
+  kwargs: Record<string, unknown> = {}
+): Promise<unknown> {
+  const base = profile.url.replace(/\/+$/, '');
+  const uid = await odooUid(profile);
+  return odooRpc(base, 'object', 'execute_kw', [
+    profile.db,
+    uid,
+    profile.password,
+    model,
+    method,
+    args,
+    kwargs,
+  ]);
+}
+
+type Many2one = [number, string] | false;
+const m2oId = (v: Many2one): number | null => (v ? v[0] : null);
+const m2oName = (v: Many2one): string => (v ? v[1] : '');
+
+/** Odoo stores descriptions as HTML; the list shows plain text. */
+function htmlToText(html: string | false): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+const OPEN_DOMAIN = [['stage_id.fold', '=', false]];
+
+/** Every helpdesk team with its open-ticket count (stages not folded). */
+export async function helpdeskTeams(profile: OdooProfile): Promise<HelpdeskTeam[]> {
+  const teams = (await executeKw(profile, 'helpdesk.team', 'search_read', [[]], {
+    fields: ['id', 'name', 'description'],
+    order: 'sequence, name',
+  })) as Array<{ id: number; name: string; description: string | false }>;
+  const groups = (await executeKw(profile, 'helpdesk.ticket', 'read_group', [
+    OPEN_DOMAIN,
+    ['team_id'],
+    ['team_id'],
+  ])) as Array<{ team_id: Many2one; team_id_count: number }>;
+  const open = new Map<number | null, number>();
+  for (const g of groups) open.set(m2oId(g.team_id), g.team_id_count);
+  return teams.map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: htmlToText(t.description),
+    open: open.get(t.id) ?? 0,
+  }));
+}
+
+/** Open tickets, newest activity first, optionally for one team. */
+export async function helpdeskTickets(
+  profile: OdooProfile,
+  opts: { teamId?: number; limit?: number } = {}
+): Promise<HelpdeskTicket[]> {
+  const domain = opts.teamId ? [...OPEN_DOMAIN, ['team_id', '=', opts.teamId]] : OPEN_DOMAIN;
+  const rows = (await executeKw(profile, 'helpdesk.ticket', 'search_read', [domain], {
+    fields: [
+      'id',
+      'ticket_ref',
+      'name',
+      'team_id',
+      'stage_id',
+      'partner_id',
+      'user_id',
+      'priority',
+      'sla_deadline',
+      'kanban_state',
+      'create_date',
+      'write_date',
+      'description',
+    ],
+    order: 'write_date desc',
+    limit: opts.limit ?? 500,
+  })) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: r.id as number,
+    ref: (r.ticket_ref as string | false) || String(r.id),
+    name: (r.name as string) ?? '',
+    teamId: m2oId(r.team_id as Many2one),
+    team: m2oName(r.team_id as Many2one),
+    stageId: m2oId(r.stage_id as Many2one),
+    stage: m2oName(r.stage_id as Many2one),
+    customer: m2oName(r.partner_id as Many2one),
+    assigneeId: m2oId(r.user_id as Many2one),
+    assignee: m2oName(r.user_id as Many2one),
+    priority: Number(r.priority ?? 0),
+    slaDeadline: (r.sla_deadline as string | false) || null,
+    kanbanState: (r.kanban_state as string) ?? 'normal',
+    createdAt: r.create_date as string,
+    updatedAt: r.write_date as string,
+    description: htmlToText(r.description as string | false).slice(0, 4000),
+  }));
 }

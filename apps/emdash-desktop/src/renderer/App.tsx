@@ -53,7 +53,8 @@ function AppContent() {
   useEffect(() => {
     if (!isLoading && view === 'onboarding' && frozenSteps === null) {
       const computed: OnboardingStep[] = [];
-      if (!session?.isSignedIn) computed.push('sign-in');
+      // ITMS: no GitHub sign-in on first launch. GitHub stays an optional integration in Settings.
+      void session;
       const needsImport = legacyStatus?.hasImportSources && !legacyStatus.portStatus;
       if (needsImport) computed.push('import');
       setFrozenSteps(computed);

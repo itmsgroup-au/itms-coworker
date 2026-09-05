@@ -2,6 +2,7 @@ import { automationsBrowserContributions } from '@core/features/automations/cont
 import { conversationsBrowserContributions } from '@core/features/conversations/contributions/browser';
 import { devPerfBrowserContributions } from '@core/features/dev-perf/contributions/browser';
 import { editorBrowserContributions } from '@core/features/editor/contributions/browser';
+import { helpdeskBrowserContributions } from '@core/features/helpdesk/contributions/browser';
 import { integrationsBrowserContributions } from '@core/features/integrations/contributions/browser';
 import { libraryBrowserContributions } from '@core/features/library/contributions/browser';
 import { machinesBrowserContributions } from '@core/features/machines/contributions/browser';
@@ -18,6 +19,7 @@ export const featureViewRuntimes = [
   ...projectsBrowserContributions.views,
   ...settingsBrowserContributions.views,
   ...tasksBrowserContributions.views,
+  ...helpdeskBrowserContributions.views,
 ] as const;
 
 export const featureModalDefs = [

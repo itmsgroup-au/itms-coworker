@@ -4,6 +4,7 @@ import {
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
+import { helpdeskSettingsContribution } from '@core/features/helpdesk/contributions/settings';
 import { odooSettingsContribution } from '@core/features/odoo/contributions/settings';
 import {
   localProjectSettingsSchemaContribution,
@@ -46,6 +47,7 @@ export const appSettingsSchemaContributions = {
   changesViewMode: changesViewModeSettingsContribution,
   remoteMachine: hostSettingsSchemaContribution,
   odoo: odooSettingsContribution,
+  helpdesk: helpdeskSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

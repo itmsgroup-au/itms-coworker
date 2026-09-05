@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-09-04T13:12:23.034Z._
+_Auto-generated. Last updated 2026-09-05T00:27:56.866Z._
 
 - [decision-collapsed-tool-calls](pages/decision-collapsed-tool-calls.md) — category: decision | tags: [chat-ui, transcript] | Mark, 4 Sep 2026: hide code and thinking by default behind an arrow, then one larger collapse above all the commands. Where it lives: packag
 - [decision-odoo-profiles-in-settings](pages/decision-odoo-profiles-in-settings.md) — category: decision | tags: [odoo, settings] | Mark asked (4 Sep 2026) for a Settings section to hold the Odoo server an agent works against, with profiles like ~/.odoo-profiles.json. Dec
