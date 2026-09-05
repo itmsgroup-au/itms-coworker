@@ -66,9 +66,19 @@ cd apps/emdash-desktop && pnpm run package:mac
     as its first prompt; the pill shows the live task status (Working, Needs you, Done).
   - `contributions/settings.ts`: settings key `helpdesk` holding the assignments
     (`${profileId}:${ticketId}` → project, task, provider).
+  - `browser/components/TicketDetail.tsx`: the right pane when a ticket is selected (Thread,
+    Customer, Agent tabs). The Agent tab reads the task transcript through
+    `features/conversations/api/browser/acp-transcript.ts` (`readTaskTranscript`, polled every
+    2 s because the transcript is signal-backed) and posts an internal note back to the ticket.
+  - `contributions/browser/status-bar.tsx`: the bottom strip on every view, mounted in
+    `src/renderer/app/workspace.tsx`. `contributions/browser/open-count.tsx`: the sidebar badge.
   - `api/browser/use-helpdesk.ts`: react-query hooks over the Odoo wire domain.
   - The Odoo wire domain (`features/odoo`) gained `executeKw`, `helpdeskTeams`,
-    `helpdeskTickets`; the `uid` is cached per profile in `node/odoo-service.ts`.
+    `helpdeskTickets`, `helpdeskMessages`, `helpdeskRelated` and `helpdeskPostNote` (the one
+    write: an internal note via `message_post` with `mail.mt_note`); the `uid` is cached per
+    profile in `node/odoo-service.ts`.
+  - Renderer console errors, crashes and load failures are written to
+    `.emdash-logs/emdash.log` by `src/main/host/window.ts`, so a white screen leaves a trace.
   - Registered in `manifests/browser/view-catalog.ts`, `manifests/browser/browser-contributions.ts`,
     `manifests/shared/settings-contributions.ts`, and the telemetry unions in
     `primitives/telemetry/api/telemetry.ts` (a new view id must be added there too).
@@ -105,7 +115,6 @@ The Odoo feature is the smallest complete example of all five steps.
 - Machines: pre-fill from the datasets tenants manifests.
 - Named agents (Bruce, Ric, Worker) instead of provider CLIs; project becomes client, task
   becomes job, for non-developers.
-- Tasks page: ticket detail pane with chatter, "Related information" (customer, previous
-  tickets, mail, files, RMM), a persistent status bar for the working agent, and writing the
-  agent's result back to the Odoo ticket as a note (needs a write path; today the wire calls
-  are read-only).
+- Tasks page: related mail, files and RMM endpoints for the customer (needs the lake or
+  atlas from the renderer); Today and Home pages; named workers with skill sets instead of
+  provider CLIs.
