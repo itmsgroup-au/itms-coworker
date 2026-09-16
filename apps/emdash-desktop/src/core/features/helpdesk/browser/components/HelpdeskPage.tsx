@@ -28,6 +28,7 @@ import {
   getProjectStore,
   projectData,
 } from '@core/features/projects/api/browser/stores/project-selectors';
+import { getAppSettingValueSnapshot } from '@core/features/settings/api/browser/app-settings-client';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
@@ -242,12 +243,21 @@ const TicketList = observer(function TicketList({
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
+  // Read the freshest stored map rather than this render's snapshot: `update`
+  // replaces `assignments` wholesale, so two starts in quick succession would
+  // otherwise clobber each other (measured 16 Sep 2026: two tasks, one
+  // surviving assignment).
+  const currentAssignments = (): Record<string, HelpdeskAssignment> =>
+    getAppSettingValueSnapshot('helpdesk')?.assignments ?? assignments;
+
   const saveAssignment = (a: HelpdeskAssignment) => {
-    update({ assignments: { ...assignments, [assignmentKey(a.profileId, a.ticketId)]: a } });
+    update({
+      assignments: { ...currentAssignments(), [assignmentKey(a.profileId, a.ticketId)]: a },
+    });
     void postAssignNote(profile, helpdesk, a);
   };
   const clearAssignment = (ticketId: number) => {
-    const next = { ...assignments };
+    const next = { ...currentAssignments() };
     delete next[assignmentKey(profile.id, ticketId)];
     update({ assignments: next });
   };

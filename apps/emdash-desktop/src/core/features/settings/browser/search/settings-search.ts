@@ -234,6 +234,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 
   // Interface
   {
+    id: 'hide-developer-tools',
+    label: 'Hide developer tools',
+    tab: 'interface',
+    description: 'Hide pull requests, worktrees, and the diff and changes panels.',
+    keywords: ['developer', 'git', 'pull requests', 'worktrees', 'diff', 'changes', 'mode'],
+  },
+  {
     id: 'color-mode',
     label: 'Color mode',
     tab: 'interface',
