@@ -80,9 +80,7 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
   - `contributions/settings.ts`: settings key `helpdesk` holding the assignments
     (`${profileId}:${ticketId}` → project, task, provider).
   - `browser/components/TicketDetail.tsx`: the right pane when a ticket is selected (Thread,
-    Customer, Agent tabs). The Agent tab reads the task transcript through
-    `features/conversations/api/browser/acp-transcript.ts` (`readTaskTranscript`, polled every
-    2 s because the transcript is signal-backed) and posts an internal note back to the ticket.
+    Customer, Agent tabs). The Agent tab is a live chat, see below.
   - `contributions/browser/status-bar.tsx`: the bottom strip on every view, mounted in
     `src/renderer/app/workspace.tsx`. `contributions/browser/open-count.tsx`: the sidebar badge.
   - `api/browser/use-helpdesk.ts`: react-query hooks over the Odoo wire domain.
@@ -95,6 +93,65 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
   - Registered in `manifests/browser/view-catalog.ts`, `manifests/browser/browser-contributions.ts`,
     `manifests/shared/settings-contributions.ts`, and the telemetry unions in
     `primitives/telemetry/api/telemetry.ts` (a new view id must be added there too).
+
+- **Talking to the agent on a ticket (16 September 2026).** The Agent tab in
+  `TicketDetail.tsx` is a real ACP chat, not a progress summary.
+  - `browser/components/TicketAgentChat.tsx` mounts an `AcpChatStore` plus `ChatTranscript`
+    with a small composer. It resolves the conversation from the wire
+    (`client.getConversationsForTask`), not from `conversationRegistry`, so the transcript
+    loads without the user opening the task view first. `AcpChatPanel` itself could not be
+    reused: it reads its store out of a workbench pane context.
+  - `features/conversations/api/browser/acp-chat-access.ts` re-exports
+    `getAcpChatResourceManager` so helpdesk can reach it without breaking the oxlint rule
+    `emdash(core-module-boundaries)`, which forbids importing another slice's `browser/**`.
+  - `api/browser/agent-progress-source.ts` replaced the 2 s poll with the ACP live models
+    (`conversations.acp.session`). It deliberately does not call `loadHistory` for a suspended
+    session, because that wakes the agent; a paused worker is reported as paused.
+  - The old `acpChatRegistry` had no writer anywhere in `src`, so `readTaskTranscript` always
+    returned `available: false` and "Open the task once to read its output here" could never
+    resolve. That path is gone.
+
+- **One-click start.** `api/browser/use-ticket-agent.ts` owns the whole sequence: pick the
+  worker (hermes if installed), `prepareProject` the Odoo folder, register it as a project if
+  it is not one yet, wait for the task manager, create the task with `git: { kind: 'none' }`
+  and `repository-instance`. Worker and project pickers stay behind an Options chevron.
+
+- **Assignment hygiene.** `contributions/browser/assignments.ts` is the single derivation for
+  the status bar and the sidebar badge, and garbage-collects an assignment only on positive
+  evidence (project list loaded and missing it, or task map loaded and missing it) held for
+  20 s. `contributions/browser/assign-note.ts` posts the optional start-of-work note; the
+  switch is `postNoteOnAssign` on the `helpdesk` key, default off.
+
+- **Odoo as a capability, not just a helpdesk reader.** `features/odoo/api/contract.ts` gained
+  `searchRead`, `readRecords`, `searchCount`, `fieldsGet`, `listModels` and `callMethod`.
+  Everything returns `OdooResult<T>` — `{ ok: true, data }` or `{ ok: false, error: { kind,
+  message } }` with `kind` in `auth | network | timeout | odoo | access-denied | unknown`.
+  `classifyOdooMethod` splits reads from writes and `callMethod` refuses a write unless
+  `confirmWrite` is true. The uid cache is keyed on a password hash and retries once after
+  clearing on an auth failure. `prepareProjectFolder` also writes `.mcp.json` and
+  `.proj/config.yaml` when `~/.local/bin/itms-odoo-dev` exists, so an agent in that folder
+  gets Odoo tools; atlas stays the documented fallback.
+
+- **Procedures (Jido).** View id `jido`, label "Procedures", under
+  `apps/emdash-desktop/src/core/features/jido/`. Read-only over the Odoo ledger that
+  `jido_lab` writes: `itms.ai.cp.run` for what ran, `itms.ai.action` for what is waiting.
+  Approve and reject call the module's own `action_approve` / `action_reject`
+  (`odoo_itms_apps_19/itms_ai_worker/models/ai_action.py`), behind a confirm step that names
+  the record and the exact write. They are disabled for an `ask` whose `ask_kind` is not
+  `approve`/`acknowledge`, because Odoo raises `UserError` in that case. Jido itself lives in
+  `~/Desktop/git/jido` and `~/Desktop/git/jido_lab`; `~/Desktop/git/datasets/docs/JIDO.md` is
+  the account of it.
+
+- **Non-developer mode.** `features/workbench/contributions/mode-settings.ts`, settings key
+  `workbenchMode`, field `nonDeveloperMode`, **default true**. Consumed through
+  `features/workbench/api/browser/mode-developer-surfaces.ts` in five places: the project tab
+  array, the task tab manifest, the source-control project stores, the task sidebar and the
+  task titlebar. On, it hides pull requests, worktrees, the diff tab and the changes panel and
+  never starts `GitRepositoryStore` or `TaskPrSyncCoordinator`. Off restores every one of
+  them. The switch is Settings → Interface → Mode.
+
+- **Sidebar.** The "Work" group leads with Tickets and Procedures; Projects is collapsed by
+  default below them.
 
 ## Adding another Settings section (the recipe)
 
