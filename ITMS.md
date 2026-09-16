@@ -29,6 +29,19 @@ Packaged, unsigned macOS build (arm64, output in `apps/emdash-desktop/release/`)
 cd apps/emdash-desktop && pnpm run package:mac
 ```
 
+electron-builder finds no Developer ID certificate on this Mac, so it leaves the
+bundle with only a linker-signed executable. Launching that from Finder or `open`
+fails silently: Gatekeeper kills it, `spctl -a` reports "code has no resources but
+signature indicates they must be present". Ad-hoc sign the bundle before installing
+it, then copy it to `/Applications`:
+
+```bash
+cd apps/emdash-desktop
+codesign --force --deep --sign - --options runtime \
+  --entitlements build/entitlements.mac.plist "release/mac-arm64/ITMS CoWorker.app"
+cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
+```
+
 ## What ITMS changed, and where
 
 - **Provider name.** `packages/plugins/src/agents/impl/hermes/index.ts`: the Hermes
