@@ -102,6 +102,7 @@ export function useTicketAgentLauncher({
 
         setState(ticket.id, { phase: 'starting', step: 'Starting the worker…' });
         const taskId = crypto.randomUUID();
+        const atlasProfile = await resolveAtlasProfile(profile);
         await taskManager.createTask({
           id: taskId,
           projectId,
@@ -114,8 +115,8 @@ export function useTicketAgentLauncher({
               title: 'Ticket',
               type: supportsAcp ? 'acp' : 'pty',
               ...(supportsAcp
-                ? { initialQueue: [{ text: ticketPrompt(profile, ticket) }] }
-                : { initialPrompt: ticketPrompt(profile, ticket) }),
+                ? { initialQueue: [{ text: ticketPrompt(profile, ticket, atlasProfile) }] }
+                : { initialPrompt: ticketPrompt(profile, ticket, atlasProfile) }),
               autoApprove: false,
             },
           },
@@ -238,7 +239,34 @@ function labelFor(
 }
 
 /** What the worker is told about the ticket before it starts. */
-export function ticketPrompt(profile: OdooProfile, ticket: HelpdeskTicket): string {
+/**
+ * The name `atlas` and the `odoo` CLI know this server by.
+ *
+ * `~/.odoo-profiles.json` is keyed by that name (for example `ITMS19`), which
+ * is neither this app's profile id (`itms-19`) nor its display name
+ * (`itms - 19`). Measured 16 Sep 2026: a ticket prompt that passed the id made
+ * the agent's first command fail with `unknown Odoo profile "itms-19"`. Match
+ * on the server it points at instead, and return null rather than guess.
+ */
+async function resolveAtlasProfile(profile: OdooProfile): Promise<string | null> {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, '').toLowerCase();
+  try {
+    const file = await (await getOdooClient()).readProfilesFile();
+    const match = file.profiles.find(
+      (candidate: OdooProfile) =>
+        normalize(candidate.url) === normalize(profile.url) && candidate.db === profile.db
+    );
+    return match?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function ticketPrompt(
+  profile: OdooProfile,
+  ticket: HelpdeskTicket,
+  atlasProfile?: string | null
+): string {
   const lines = [
     `Odoo Helpdesk ticket #${ticket.ref}: ${ticket.name}`,
     `Server: ${profile.name} (profile "${profile.id}", ${profile.url})`,
@@ -250,7 +278,10 @@ export function ticketPrompt(profile: OdooProfile, ticket: HelpdeskTicket): stri
     'Description:',
     ticket.description || '(empty)',
     '',
-    `Read the full ticket in Odoo first: helpdesk.ticket id ${ticket.id}, including its chatter (mail.message with model helpdesk.ticket and res_id ${ticket.id}), using \`atlas odoo --profile ${profile.id}\`.`,
+    `Read the full ticket in Odoo first: helpdesk.ticket id ${ticket.id}, including its chatter (mail.message with model helpdesk.ticket and res_id ${ticket.id}).`,
+    atlasProfile
+      ? `Use the odoo MCP tools if you have them, otherwise \`atlas odoo --profile ${atlasProfile}\`.`
+      : `Use the odoo MCP tools if you have them. For atlas, run \`atlas odoo profiles\` first and pick the one for ${profile.url} (database ${profile.db}); this app's own id "${profile.id}" is not an atlas profile name.`,
     'Then investigate the problem with the tools you have, and report: what happened, what you found, and the recommended next action.',
     'Do not change the ticket, send email, or run anything destructive without asking first.',
   ];
