@@ -13,6 +13,7 @@ import {
 import { changesViewModeSettingsContribution } from '@core/features/source-control/contributions/settings';
 import { taskSettingsContribution } from '@core/features/tasks/contributions/settings';
 import { terminalSettingsContribution } from '@core/features/terminals/contributions/settings';
+import { workbenchModeSettingsContribution } from '@core/features/workbench/contributions/mode-settings';
 import {
   interfaceSettingsContribution,
   keyboardSettingsContribution,
@@ -48,6 +49,7 @@ export const appSettingsSchemaContributions = {
   remoteMachine: hostSettingsSchemaContribution,
   odoo: odooSettingsContribution,
   helpdesk: helpdeskSettingsContribution,
+  workbenchMode: workbenchModeSettingsContribution,
 } as const;
 
 export type AppSettings = SettingsValues<typeof appSettingsSchemaContributions>;

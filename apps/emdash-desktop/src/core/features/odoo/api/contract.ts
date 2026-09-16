@@ -20,7 +20,104 @@ export type OdooProfilesFile = {
   profiles: OdooProfile[];
 };
 
-export type OdooProjectFolder = { path: string; created: boolean; name: string };
+export type OdooProjectFolder = {
+  path: string;
+  created: boolean;
+  name: string;
+  /** Absolute path of the Odoo MCP server wired into the folder, or null if none was found. */
+  mcpServer: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Typed errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Every Odoo failure is normalised to one of these before it leaves the node
+ * side, so the renderer never has to pattern-match on a raw message.
+ *
+ * - `auth`          the login itself was refused (bad password or API key)
+ * - `network`       the server could not be reached, or answered non-2xx
+ * - `timeout`       the request was still open when the deadline passed
+ * - `odoo`          Odoo answered with a server-side fault (ValidationError, etc.)
+ * - `access-denied` the user is authenticated but not allowed on that record
+ * - `unknown`       anything we could not classify
+ */
+export type OdooErrorKind = 'auth' | 'network' | 'timeout' | 'odoo' | 'access-denied' | 'unknown';
+
+export type OdooError = { kind: OdooErrorKind; message: string };
+
+/** Result envelope used by every generic Odoo procedure. */
+export type OdooResult<T> = { ok: true; data: T } | { ok: false; error: OdooError };
+
+// ---------------------------------------------------------------------------
+// Generic read payloads
+// ---------------------------------------------------------------------------
+
+/**
+ * A raw Odoo record. The keys are whatever the caller asked for in `fields`
+ * and the value shapes depend on each field's Odoo type (many2one comes back
+ * as `[id, name]`, one2many as `number[]`, dates as strings). There is no
+ * honest static type for that, so values stay `unknown` rather than pretending.
+ */
+export type OdooRecord = Record<string, unknown>;
+
+/** One entry of `fields_get`. Which keys are present depends on `attributes`. */
+export type OdooFieldInfo = Partial<{
+  string: string;
+  type: string;
+  required: boolean;
+  readonly: boolean;
+  store: boolean;
+  relation: string;
+  selection: Array<[string, string]>;
+  help: string;
+}> &
+  Record<string, unknown>;
+
+export type OdooModelSummary = { model: string; name: string };
+
+// ---------------------------------------------------------------------------
+// Read / write classification
+// ---------------------------------------------------------------------------
+
+/** Default page size for `searchRead`. */
+export const ODOO_DEFAULT_LIMIT = 200;
+/** Hard cap for `searchRead`; a larger request is clamped, not refused. */
+export const ODOO_MAX_LIMIT = 500;
+
+const ODOO_READ_METHODS = new Set([
+  'fields_get',
+  'search_count',
+  'default_get',
+  'name_search',
+  'name_get',
+  'get_views',
+  'fields_view_get',
+  'check_access_rights',
+]);
+
+/**
+ * The same rule the generated project folder writes into AGENTS.md: reads are
+ * free, anything else is a write and has to be confirmed by a human first.
+ *
+ * Reads are `search*` (search, search_read, search_count, search_fetch),
+ * `read*` (read, read_group, read_progress_bar), plus the introspection and
+ * defaulting methods listed above. Everything else - create, write, unlink,
+ * message_post, button_* and any custom method - is a write.
+ */
+export function classifyOdooMethod(method: string): 'read' | 'write' {
+  const name = method.trim();
+  if (ODOO_READ_METHODS.has(name)) return 'read';
+  if (/^search(_|$)/.test(name) || name === 'search') return 'read';
+  if (/^read(_|$)/.test(name) || name === 'read') return 'read';
+  return 'write';
+}
+
+/** Convenience wrapper around {@link classifyOdooMethod}. */
+export function isOdooReadMethod(method: string): boolean {
+  return classifyOdooMethod(method) === 'read';
+}
 
 export type HelpdeskTeam = { id: number; name: string; description: string; open: number };
 
@@ -100,6 +197,67 @@ export const odooContract = defineContract({
       kwargs: z.record(z.string(), z.unknown()).optional(),
     }),
     output: z.unknown(),
+  }),
+  /** search_read on any model. Limit defaults to 200 and is capped at 500. */
+  searchRead: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string().min(1),
+      domain: z.array(z.unknown()).optional(),
+      fields: z.array(z.string()).optional(),
+      order: z.string().optional(),
+      limit: z.number().int().positive().max(ODOO_MAX_LIMIT).optional(),
+      offset: z.number().int().nonnegative().optional(),
+    }),
+    output: z.custom<OdooResult<OdooRecord[]>>(),
+  }),
+  /** read on a known set of ids. */
+  readRecords: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string().min(1),
+      ids: z.array(z.number().int()),
+      fields: z.array(z.string()).optional(),
+    }),
+    output: z.custom<OdooResult<OdooRecord[]>>(),
+  }),
+  /** search_count on any model. */
+  searchCount: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string().min(1),
+      domain: z.array(z.unknown()).optional(),
+    }),
+    output: z.custom<OdooResult<number>>(),
+  }),
+  /** fields_get: what fields a model has, and of what type. */
+  fieldsGet: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string().min(1),
+      attributes: z.array(z.string()).optional(),
+    }),
+    output: z.custom<OdooResult<Record<string, OdooFieldInfo>>>(),
+  }),
+  /** ir.model, optionally filtered by a substring of the technical or display name. */
+  listModels: procedure({
+    input: z.object({ profile: z.custom<OdooProfile>(), filter: z.string().optional() }),
+    output: z.custom<OdooResult<OdooModelSummary[]>>(),
+  }),
+  /**
+   * Any model method, behind the write gate. Reads run straight through;
+   * anything else is refused with a typed error unless confirmWrite is true.
+   */
+  callMethod: procedure({
+    input: z.object({
+      profile: z.custom<OdooProfile>(),
+      model: z.string().min(1),
+      method: z.string().min(1),
+      args: z.array(z.unknown()),
+      kwargs: z.record(z.string(), z.unknown()).optional(),
+      confirmWrite: z.boolean(),
+    }),
+    output: z.custom<OdooResult<unknown>>(),
   }),
   /** Helpdesk teams with open-ticket counts. */
   helpdeskTeams: procedure({

@@ -1,4 +1,5 @@
-import { PageLayout } from '@emdash/ui/react/patterns';
+import { PageLayout, SettingsSection } from '@emdash/ui/react/patterns';
+import { HelpdeskWriteBackCard } from '../components/HelpdeskWriteBackCard';
 import { OdooProfilesCard } from '../components/OdooProfilesCard';
 
 export function OdooSettingsPage() {
@@ -10,6 +11,9 @@ export function OdooSettingsPage() {
         description="The Odoo servers ITMS CoWorker agents work against, as profiles."
       />
       <OdooProfilesCard />
+      <SettingsSection title="Helpdesk write-back" bare>
+        <HelpdeskWriteBackCard />
+      </SettingsSection>
     </div>
   );
 }

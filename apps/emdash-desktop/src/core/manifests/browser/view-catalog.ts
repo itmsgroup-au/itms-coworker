@@ -1,5 +1,6 @@
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
+import { jidoViewDef } from '@core/features/jido/contributions/views';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
@@ -13,6 +14,7 @@ export const viewCatalog = defineViewCatalog([
   taskViewDef,
   settingsViewDef,
   helpdeskViewDef,
+  jidoViewDef,
 ] as const);
 
 export type ViewId = (typeof viewCatalog.defs)[number]['id'];

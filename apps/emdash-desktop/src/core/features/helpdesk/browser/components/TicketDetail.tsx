@@ -4,6 +4,7 @@ import { ExternalLink, Mail, MessageSquare, StickyNote, X } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
+import type { AcpChatStore } from '@core/features/conversations/api/browser/acp-chat-access';
 import { taskAgentStatus } from '@core/features/conversations/api/browser/conversation-selectors';
 import {
   HELPDESK_QUERY_KEY,
@@ -21,7 +22,8 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
-import { AgentProgressList, useTaskProgress } from './AgentProgress';
+import { AgentProgressList } from './AgentProgress';
+import { lastAssistantText, TicketAgentChat } from './TicketAgentChat';
 
 type Tab = 'thread' | 'customer' | 'agent';
 
@@ -91,7 +93,14 @@ export const TicketDetail = observer(function TicketDetail({
         </TabButton>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          'min-h-0 flex-1',
+          // The agent tab owns its own scrolling: the transcript scrolls, the
+          // composer stays pinned. Every other tab scrolls as a whole.
+          tab === 'agent' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'
+        )}
+      >
         {tab === 'thread' && <ThreadTab profile={profile} ticket={ticket} />}
         {tab === 'customer' && <CustomerTab profile={profile} ticket={ticket} />}
         {tab === 'agent' && (
@@ -263,7 +272,6 @@ const AgentTab = observer(function AgentTab({
   profile,
   ticket,
   assignment,
-  onAssign,
 }: {
   profile: OdooProfile;
   ticket: HelpdeskTicket;
@@ -271,28 +279,18 @@ const AgentTab = observer(function AgentTab({
   onAssign: () => void;
 }) {
   const { navigate } = useNavigate();
-  const queryClient = useQueryClient();
-  const progress = useTaskProgress(assignment?.taskId ?? null);
-  const [note, setNote] = useState('');
-  const [noteTouched, setNoteTouched] = useState(false);
-  const [posting, setPosting] = useState(false);
+  const [chatStore, setChatStore] = useState<AcpChatStore | null>(null);
+  const [showNote, setShowNote] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
-    if (!noteTouched) setNote(progress.lastAssistantText);
-  }, [progress.lastAssistantText, noteTouched]);
-  useEffect(() => {
-    setNote('');
-    setNoteTouched(false);
+    setShowNote(false);
+    setShowSteps(false);
   }, [assignment?.taskId]);
 
   if (!assignment) {
     return (
-      <div className="flex flex-col items-start gap-2 px-4 py-4 text-xs text-foreground-muted">
-        <div>No agent is on this ticket.</div>
-        <Button size="sm" onClick={onAssign}>
-          Assign agent
-        </Button>
-      </div>
+      <div className="px-4 py-4 text-xs text-foreground-muted">No agent is on this ticket yet.</div>
     );
   }
 
@@ -300,40 +298,21 @@ const AgentTab = observer(function AgentTab({
   const status = taskStore ? (taskAgentStatus(taskStore) ?? 'idle') : 'missing';
   const project = projectData(getProjectStore(assignment.projectId));
 
-  const post = async () => {
-    const body = note.trim();
-    if (!body) return;
-    setPosting(true);
-    try {
-      await postHelpdeskNote(profile, ticket.id, body);
-      await queryClient.invalidateQueries({ queryKey: [...HELPDESK_QUERY_KEY, 'messages'] });
-      toast(`Note added to #${ticket.ref}`);
-      setNote('');
-      setNoteTouched(true);
-    } catch (error) {
-      toast.error('Could not add the note', {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setPosting(false);
-    }
-  };
-
   return (
-    <div className="flex flex-col gap-4 px-4 py-3 text-xs">
-      <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-xs">
         <AgentIcon id={assignment.provider} size={18} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">
+          <div className="truncate text-sm font-medium">
             {assignment.provider === 'hermes' ? 'ITMS CoWorker' : assignment.provider}
           </div>
-          <div className="text-foreground-muted">
+          <div className="truncate text-foreground-muted">
             {project?.name ?? assignment.projectId} · since {formatDateTime(assignment.assignedAt)}
           </div>
         </div>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
             status === 'working' && 'bg-emerald-500/15 text-emerald-600',
             status === 'awaiting-input' && 'bg-amber-500/15 text-amber-600',
             status === 'error' && 'bg-red-500/15 text-red-600',
@@ -345,66 +324,128 @@ const AgentTab = observer(function AgentTab({
         </span>
       </div>
 
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() =>
-          navigate(taskViewDef({ projectId: assignment.projectId, taskId: assignment.taskId }))
-        }
-      >
-        Open the task
-      </Button>
-
-      <div>
-        <div className="mb-1 text-[11px] font-medium tracking-wide text-foreground-muted uppercase">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-[11px]">
+        <LinkButton active={showSteps} onClick={() => setShowSteps((v) => !v)}>
           Steps
-        </div>
-        <AgentProgressList taskId={assignment.taskId} />
+        </LinkButton>
+        <LinkButton active={showNote} onClick={() => setShowNote((v) => !v)}>
+          Note to ticket
+        </LinkButton>
+        <button
+          type="button"
+          className="ml-auto text-foreground-muted hover:text-foreground"
+          onClick={() =>
+            navigate(taskViewDef({ projectId: assignment.projectId, taskId: assignment.taskId }))
+          }
+        >
+          Open the task
+        </button>
       </div>
 
-      <div>
-        <div className="mb-1 text-[11px] font-medium tracking-wide text-foreground-muted uppercase">
-          Latest from the agent
+      {showSteps && (
+        <div className="max-h-40 shrink-0 overflow-y-auto border-b border-border px-4 py-2">
+          <AgentProgressList taskId={assignment.taskId} />
         </div>
-        {progress.lastAssistantText ? (
-          <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-background-secondary/40 px-3 py-2 whitespace-pre-wrap">
-            {progress.lastAssistantText}
-          </div>
-        ) : (
-          <div className="text-foreground-muted">
-            {progress.available
-              ? 'Nothing said yet.'
-              : 'Open the task once to read its output here.'}
-          </div>
-        )}
-      </div>
+      )}
 
-      <div>
-        <div className="mb-1 text-[11px] font-medium tracking-wide text-foreground-muted uppercase">
-          Add an internal note to the ticket
-        </div>
-        <textarea
-          value={note}
-          onChange={(e) => {
-            setNote(e.target.value);
-            setNoteTouched(true);
-          }}
-          rows={6}
-          placeholder="What should go on the ticket? Pre-filled with the agent's latest message."
-          className="focus-visible:ring-accent w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus-visible:ring-1"
+      {showNote && (
+        <TicketNoteBox
+          profile={profile}
+          ticket={ticket}
+          initialBody={lastAssistantText(chatStore)}
+          onDone={() => setShowNote(false)}
         />
-        <div className="mt-1 flex items-center justify-between">
-          <span className="text-foreground-muted">
-            Posted as {profile.user}, as an internal note. Nothing is sent to the customer.
-          </span>
-          <Button size="sm" onClick={() => void post()} disabled={posting || !note.trim()}>
-            {posting ? 'Adding…' : 'Add note'}
-          </Button>
-        </div>
-      </div>
+      )}
+
+      <TicketAgentChat
+        key={assignment.taskId}
+        projectId={assignment.projectId}
+        taskId={assignment.taskId}
+        onStoreChange={setChatStore}
+        className="flex-1"
+      />
     </div>
   );
 });
+
+function LinkButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'rounded px-1.5 py-0.5',
+        active ? 'bg-foreground/10 text-foreground' : 'text-foreground-muted hover:text-foreground'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Post an internal note on the Odoo ticket, pre-filled with the agent's last message. */
+function TicketNoteBox({
+  profile,
+  ticket,
+  initialBody,
+  onDone,
+}: {
+  profile: OdooProfile;
+  ticket: HelpdeskTicket;
+  initialBody: string;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState(initialBody);
+  const [posting, setPosting] = useState(false);
+
+  const post = async () => {
+    const body = note.trim();
+    if (!body) return;
+    setPosting(true);
+    try {
+      await postHelpdeskNote(profile, ticket.id, body);
+      await queryClient.invalidateQueries({ queryKey: [...HELPDESK_QUERY_KEY, 'messages'] });
+      toast(`Note added to #${ticket.ref}`);
+      setNote('');
+      onDone();
+    } catch (error) {
+      toast.error('Could not add the note', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 border-b border-border px-4 py-2 text-xs">
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={5}
+        placeholder="What should go on the ticket? Pre-filled with the agent's latest message."
+        className="focus-visible:ring-accent w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus-visible:ring-1"
+      />
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="min-w-0 text-[11px] text-foreground-muted">
+          Internal note as {profile.user}. Nothing is sent to the customer.
+        </span>
+        <Button size="sm" onClick={() => void post()} disabled={posting || !note.trim()}>
+          {posting ? 'Adding…' : 'Add note'}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 

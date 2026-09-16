@@ -6,8 +6,13 @@ export type TaskTranscriptSummary = {
   steps: TranscriptStep[];
   lastAssistantText: string;
   turnStatus: 'generating' | 'cancelled' | 'done' | null;
-  /** False until a chat panel for the task has loaded its transcript. */
+  /** False until a transcript for the task could be read at all. */
   available: boolean;
+  /**
+   * True when the task's ACP sessions are all suspended, so earlier turns
+   * cannot be replayed without waking the agent.
+   */
+  suspended: boolean;
 };
 
 export const EMPTY_TRANSCRIPT_SUMMARY: TaskTranscriptSummary = {
@@ -15,19 +20,27 @@ export const EMPTY_TRANSCRIPT_SUMMARY: TaskTranscriptSummary = {
   lastAssistantText: '',
   turnStatus: null,
   available: false,
+  suspended: false,
 };
 
-type AnyItem = {
+/**
+ * The shape both transcript sources share: the renderer chat store's rendered
+ * items and the ACP runtime's `transcriptTurnSchema` items use the same
+ * `kind` / `id` / `title` / `status` / `role` / `text` fields.
+ */
+export type TranscriptLikeItem = {
   kind?: string;
   id?: string;
   role?: string;
   text?: string;
   title?: string;
   status?: string;
-  children?: AnyItem[];
+  children?: TranscriptLikeItem[];
 };
 
-function collectSteps(items: readonly AnyItem[], out: TranscriptStep[]): void {
+export type TranscriptLikeTurn = { items: readonly TranscriptLikeItem[] };
+
+function collectSteps(items: readonly TranscriptLikeItem[], out: TranscriptStep[]): void {
   for (const item of items) {
     if (!item.kind) continue;
     if (item.kind === 'tool-group') {
@@ -42,10 +55,29 @@ function collectSteps(items: readonly AnyItem[], out: TranscriptStep[]): void {
   }
 }
 
+/** Every tool call in order, plus the last assistant message across the turns. */
+export function summarizeTranscriptTurns(turns: readonly TranscriptLikeTurn[]): {
+  steps: TranscriptStep[];
+  lastAssistantText: string;
+} {
+  const steps: TranscriptStep[] = [];
+  let lastAssistantText = '';
+  for (const turn of turns) {
+    collectSteps(turn.items, steps);
+    for (const item of turn.items) {
+      if (item.kind === 'message' && item.role === 'assistant' && item.text?.trim()) {
+        lastAssistantText = item.text;
+      }
+    }
+  }
+  return { steps, lastAssistantText };
+}
+
 /**
- * A flat reading of a task's ACP transcript(s): every tool call as a step,
- * the last assistant message, and whether a turn is still generating. The
- * transcript is signal-backed rather than MobX, so callers poll this.
+ * A flat reading of a task's ACP transcript(s) from the renderer chat stores.
+ * Only populated once a chat panel for the task has mounted; the helpdesk
+ * progress view reads the ACP live models instead (see
+ * `@core/features/helpdesk/api/browser/agent-progress-source`).
  */
 export function readTaskTranscript(taskId: string): TaskTranscriptSummary {
   const stores = acpChatRegistry.getAll(taskId);
@@ -55,23 +87,18 @@ export function readTaskTranscript(taskId: string): TaskTranscriptSummary {
   let turnStatus: TaskTranscriptSummary['turnStatus'] = null;
   for (const store of stores.values()) {
     const state = store.chatState.transcript.state as {
-      committedTurns: readonly { items: readonly AnyItem[] }[];
-      activeTurnSnapshot: { items: readonly AnyItem[] } | null;
+      committedTurns: readonly TranscriptLikeTurn[];
+      activeTurnSnapshot: TranscriptLikeTurn | null;
       turnStatus: 'generating' | 'cancelled' | 'done';
     };
     const turns = [
       ...state.committedTurns,
       ...(state.activeTurnSnapshot ? [state.activeTurnSnapshot] : []),
     ];
-    for (const turn of turns) {
-      collectSteps(turn.items, steps);
-      for (const item of turn.items) {
-        if (item.kind === 'message' && item.role === 'assistant' && item.text?.trim()) {
-          lastAssistantText = item.text;
-        }
-      }
-    }
+    const summary = summarizeTranscriptTurns(turns);
+    steps.push(...summary.steps);
+    if (summary.lastAssistantText) lastAssistantText = summary.lastAssistantText;
     turnStatus = state.turnStatus;
   }
-  return { steps, lastAssistantText, turnStatus, available: true };
+  return { steps, lastAssistantText, turnStatus, available: true, suspended: false };
 }

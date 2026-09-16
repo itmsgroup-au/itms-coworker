@@ -1,6 +1,6 @@
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
-import { Button, Select, toast } from '@emdash/ui/react/primitives';
-import { ChevronDown, ChevronRight, Headset, RefreshCw, Star } from 'lucide-react';
+import { Button, Select } from '@emdash/ui/react/primitives';
+import { ChevronDown, ChevronRight, Headset, Loader2, RefreshCw, Star } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
@@ -14,6 +14,12 @@ import {
   useHelpdeskTeams,
   useHelpdeskTickets,
 } from '@core/features/helpdesk/api/browser/use-helpdesk';
+import {
+  useTicketAgentLauncher,
+  type TicketAgentLauncher,
+  type TicketAgentState,
+} from '@core/features/helpdesk/api/browser/use-ticket-agent';
+import { postAssignNote } from '@core/features/helpdesk/contributions/browser/assign-note';
 import { assignmentKey } from '@core/features/helpdesk/contributions/settings';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import type { HelpdeskTeam, HelpdeskTicket } from '@core/features/odoo/api/contract';
@@ -24,10 +30,7 @@ import {
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
-import {
-  getTaskManagerStore,
-  getTaskStore,
-} from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
 import {
@@ -241,12 +244,14 @@ const TicketList = observer(function TicketList({
 
   const saveAssignment = (a: HelpdeskAssignment) => {
     update({ assignments: { ...assignments, [assignmentKey(a.profileId, a.ticketId)]: a } });
+    void postAssignNote(profile, helpdesk, a);
   };
   const clearAssignment = (ticketId: number) => {
     const next = { ...assignments };
     delete next[assignmentKey(profile.id, ticketId)];
     update({ assignments: next });
   };
+  const launcher = useTicketAgentLauncher({ profile, onAssigned: saveAssignment });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -329,21 +334,24 @@ const TicketList = observer(function TicketList({
                                       ticket={ticket}
                                       assignment={assignment}
                                       selected={ticket.id === selectedTicketId}
+                                      agentState={launcher.stateFor(ticket.id)}
+                                      providerLabel={launcher.defaultProviderLabel}
                                       onSelect={() =>
                                         onSelect(ticket.id === selectedTicketId ? null : ticket.id)
                                       }
-                                      onAssign={() => setAssigning(ticket.id)}
+                                      onStart={() => void launcher.start(ticket)}
+                                      onOptions={() =>
+                                        setAssigning((id) => (id === ticket.id ? null : ticket.id))
+                                      }
                                       onUnassign={() => clearAssignment(ticket.id)}
                                     />
                                     {assigning === ticket.id && (
                                       <AssignRow
                                         profile={profile}
                                         ticket={ticket}
+                                        launcher={launcher}
                                         onCancel={() => setAssigning(null)}
-                                        onAssigned={(a) => {
-                                          saveAssignment(a);
-                                          setAssigning(null);
-                                        }}
+                                        onStarted={() => setAssigning(null)}
                                       />
                                     )}
                                   </TicketRowGroup>
@@ -379,7 +387,7 @@ const TicketList = observer(function TicketList({
               ticket={selectedTicket}
               assignment={assignments[assignmentKey(profile.id, selectedTicket.id)] ?? null}
               onClose={() => onSelect(null)}
-              onAssign={() => setAssigning(selectedTicket.id)}
+              onAssign={() => void launcher.start(selectedTicket)}
             />
           </div>
         )}
@@ -426,15 +434,21 @@ const TicketRow = observer(function TicketRow({
   ticket,
   assignment,
   selected,
+  agentState,
+  providerLabel,
   onSelect,
-  onAssign,
+  onStart,
+  onOptions,
   onUnassign,
 }: {
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
   selected: boolean;
+  agentState: TicketAgentState | null;
+  providerLabel: string | null;
   onSelect: () => void;
-  onAssign: () => void;
+  onStart: () => void;
+  onOptions: () => void;
   onUnassign: () => void;
 }) {
   const sla = ticket.slaDeadline ? formatDay(ticket.slaDeadline) : '';
@@ -471,7 +485,14 @@ const TicketRow = observer(function TicketRow({
         {ticket.name}
       </td>
       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-        <AgentCell assignment={assignment} onAssign={onAssign} onUnassign={onUnassign} />
+        <AgentCell
+          assignment={assignment}
+          state={agentState}
+          providerLabel={providerLabel}
+          onStart={onStart}
+          onOptions={onOptions}
+          onUnassign={onUnassign}
+        />
       </td>
       <td className={cn('px-3 py-2 text-right', slaLate && 'text-red-500')}>{sla}</td>
     </tr>
@@ -509,19 +530,65 @@ const STATUS_LABEL: Record<string, { text: string; className: string }> = {
 
 const AgentCell = observer(function AgentCell({
   assignment,
-  onAssign,
+  state,
+  providerLabel,
+  onStart,
+  onOptions,
   onUnassign,
 }: {
   assignment: HelpdeskAssignment | null;
-  onAssign: () => void;
+  state: TicketAgentState | null;
+  providerLabel: string | null;
+  onStart: () => void;
+  onOptions: () => void;
   onUnassign: () => void;
 }) {
   const { navigate } = useNavigate();
   if (!assignment) {
+    const starting = state?.phase === 'starting';
     return (
-      <Button variant="secondary" size="sm" onClick={onAssign}>
-        Assign agent
-      </Button>
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onStart}
+            disabled={starting}
+            title={
+              providerLabel
+                ? `Start ${providerLabel} on this ticket`
+                : 'Start a worker on this ticket'
+            }
+          >
+            {state?.phase === 'starting' ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 className="size-3.5 animate-spin" />
+                {state.step}
+              </span>
+            ) : (
+              'Start agent'
+            )}
+          </Button>
+          <button
+            type="button"
+            className="rounded-md p-1 text-foreground-muted hover:bg-background-secondary hover:text-foreground"
+            onClick={onOptions}
+            disabled={starting}
+            title="Choose the worker and the project"
+            aria-label="Agent options"
+          >
+            <ChevronDown className="size-4" />
+          </button>
+        </div>
+        {state?.phase === 'error' && (
+          <div className="text-[11px] text-red-600" title={state.message}>
+            <span className="line-clamp-2">{state.message}</span>
+            <button type="button" className="mt-0.5 underline" onClick={onOptions}>
+              Choose a worker and project
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
   const taskStore = getTaskStore(assignment.projectId, assignment.taskId);
@@ -569,88 +636,43 @@ function ProviderName({ id }: { id: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Assign row: pick the worker and the project, then start the task
+// Options row: the advanced path, for choosing the worker and the project
 // ---------------------------------------------------------------------------
 
 const AssignRow = observer(function AssignRow({
   profile,
   ticket,
+  launcher,
   onCancel,
-  onAssigned,
+  onStarted,
 }: {
   profile: OdooProfile;
   ticket: HelpdeskTicket;
+  launcher: TicketAgentLauncher;
   onCancel: () => void;
-  onAssigned: (assignment: HelpdeskAssignment) => void;
+  onStarted: () => void;
 }) {
   const projects = useProjectOptions();
   const paired = projects.find((p) => p.path.endsWith(`odoo-${profile.id}`)) ?? projects[0];
   const [projectId, setProjectId] = useState<string | undefined>(paired?.id);
   const project = projects.find((p) => p.id === projectId);
   const [provider, setProvider] = useState<AgentProviderId | null>(null);
-  const [busy, setBusy] = useState(false);
   const { groups } = useAgentAvailability({ connectionId: project?.connectionId, value: provider });
   const options = groups.flatMap((g) => g.items);
-  const effectiveProvider =
-    provider ??
-    options.find((o) => o.agentId === ('hermes' as AgentProviderId) && !o.disabled)?.agentId ??
-    options.find((o) => !o.disabled)?.agentId ??
-    null;
+  const effectiveProvider = provider ?? launcher.defaultProvider;
   const option = options.find((o) => o.agentId === effectiveProvider);
+  const state = launcher.stateFor(ticket.id);
+  const busy = state?.phase === 'starting';
+  const startingStep = state?.phase === 'starting' ? state.step : null;
 
   const start = async () => {
-    if (!projectId || !effectiveProvider || !project) return;
-    const taskManager = getTaskManagerStore(projectId);
-    if (!taskManager) {
-      toast.error('That project is not ready yet');
-      return;
-    }
-    setBusy(true);
-    try {
-      const taskId = crypto.randomUUID();
-      const prompt = ticketPrompt(profile, ticket);
-      const useAcp = option?.supportsAcp ?? true;
-      await taskManager.createTask({
-        id: taskId,
-        projectId,
-        taskConfig: {
-          version: '1',
-          name: `#${ticket.ref} ${ticket.name}`.slice(0, 120),
-          initialConversation: {
-            id: crypto.randomUUID(),
-            provider: effectiveProvider,
-            title: 'Ticket',
-            type: useAcp ? 'acp' : 'pty',
-            ...(useAcp ? { initialQueue: [{ text: prompt }] } : { initialPrompt: prompt }),
-            autoApprove: false,
-          },
-        },
-        workspaceConfig: {
-          version: '2',
-          git: { kind: 'none' },
-          workspace: project.repositoryWorkspaceId
-            ? { kind: 'repository-instance', workspaceId: project.repositoryWorkspaceId }
-            : { kind: 'new-worktree' },
-        },
-      });
-      onAssigned({
-        profileId: profile.id,
-        ticketId: ticket.id,
-        ticketRef: ticket.ref,
-        ticketName: ticket.name,
-        projectId,
-        taskId,
-        provider: effectiveProvider,
-        assignedAt: new Date().toISOString(),
-      });
-      toast(`${option?.label ?? effectiveProvider} is on ticket #${ticket.ref}`);
-    } catch (error) {
-      toast.error('Could not start the task', {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setBusy(false);
-    }
+    if (!effectiveProvider) return;
+    const started = await launcher.start(ticket, {
+      provider: effectiveProvider,
+      projectId,
+      supportsAcp: option?.supportsAcp,
+    });
+    if (started) onStarted();
   };
 
   return (
@@ -674,7 +696,7 @@ const AssignRow = observer(function AssignRow({
               onValueChange={(v) => setProjectId(v || undefined)}
             >
               <Select.Trigger className="w-[260px] gap-2">
-                <Select.Value>{project?.name ?? 'Choose a project'}</Select.Value>
+                <Select.Value>{project?.name ?? 'The Odoo project for this server'}</Select.Value>
               </Select.Trigger>
               <Select.Content>
                 {projects.map((p) => (
@@ -690,15 +712,14 @@ const AssignRow = observer(function AssignRow({
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              onClick={() => void start()}
-              disabled={busy || !projectId || !effectiveProvider}
-            >
-              {busy ? 'Starting…' : 'Start on this ticket'}
+            <Button size="sm" onClick={() => void start()} disabled={busy || !effectiveProvider}>
+              {busy ? (startingStep ?? 'Starting…') : 'Start on this ticket'}
             </Button>
           </div>
         </div>
+        {state?.phase === 'error' && (
+          <div className="mt-2 text-xs text-red-600">{state.message}</div>
+        )}
         <div className="mt-2 text-xs text-foreground-muted">
           The worker reads the ticket from Odoo, investigates, and reports back in its task. It does
           not change the ticket or send anything without asking.
@@ -796,25 +817,6 @@ function groupTickets(tickets: HelpdeskTicket[]): TeamGroup[] {
     );
   }
   return out.sort((a, b) => b.count - a.count);
-}
-
-function ticketPrompt(profile: OdooProfile, ticket: HelpdeskTicket): string {
-  const lines = [
-    `Odoo Helpdesk ticket #${ticket.ref}: ${ticket.name}`,
-    `Server: ${profile.name} (profile "${profile.id}", ${profile.url})`,
-    `Team: ${ticket.team || 'none'} · Stage: ${ticket.stage} · Assigned to: ${ticket.assignee || 'nobody'} · Priority: ${ticket.priority}/3`,
-    `Customer: ${ticket.customer || 'not set'}`,
-    ticket.slaDeadline ? `SLA deadline: ${ticket.slaDeadline}` : '',
-    `Opened: ${ticket.createdAt} · Last activity: ${ticket.updatedAt}`,
-    '',
-    'Description:',
-    ticket.description || '(empty)',
-    '',
-    `Read the full ticket in Odoo first: helpdesk.ticket id ${ticket.id}, including its chatter (mail.message with model helpdesk.ticket and res_id ${ticket.id}), using \`atlas odoo --profile ${profile.id}\`.`,
-    'Then investigate the problem with the tools you have, and report: what happened, what you found, and the recommended next action.',
-    'Do not change the ticket, send email, or run anything destructive without asking first.',
-  ];
-  return lines.filter((l) => l !== undefined).join('\n');
 }
 
 function formatDay(iso: string): string {

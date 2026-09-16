@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { SidebarConversationsList } from '@core/features/conversations/contributions/browser/sidebar-conversations-list';
 import { EditorFileTree } from '@core/features/editor/contributions/browser/editor-file-tree';
 import { ChangesPanel } from '@core/features/source-control/contributions/browser/changes-panel';
+import { useDeveloperSurfaces } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 import { useTaskComposition } from '@core/features/workbench/api/browser/task-composition-context';
 
 /**
@@ -20,7 +21,13 @@ import { useTaskComposition } from '@core/features/workbench/api/browser/task-co
  */
 export const TaskSidebar = observer(function TaskSidebar() {
   const taskView = useTaskComposition();
-  const activeTab = taskView.sidebarTab;
+  const { showSourceControl } = useDeveloperSurfaces();
+  const storedTab = taskView.sidebarTab;
+  // The tab is persisted state (tasks memento), so the stored value is left
+  // alone and only the rendering is gated: a task last left on Changes shows
+  // the conversations list while non-developer mode is on, and goes back to
+  // Changes the moment the mode is turned off.
+  const activeTab = storedTab === 'changes' && !showSourceControl ? 'conversations' : storedTab;
 
   return (
     <div className="h-full min-h-0 overflow-hidden">

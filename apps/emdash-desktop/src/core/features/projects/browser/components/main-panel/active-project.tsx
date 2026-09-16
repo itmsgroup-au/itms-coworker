@@ -12,6 +12,7 @@ import { TaskList } from '@core/features/projects/browser/components/task-view/t
 import { ProjectWorkspacesView } from '@core/features/projects/browser/components/workspaces-view/project-workspaces-view';
 import type { ProjectView } from '@core/features/projects/browser/stores/project-view';
 import { projectViewDef } from '@core/features/projects/contributions/views';
+import { useDeveloperSurfaces } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 import { useCurrentViewParams } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 
@@ -38,14 +39,24 @@ export const ActiveProject = observer(function ActiveProject() {
   } = useCurrentViewParams(projectViewDef);
   const context = asAvailableProject(getProjectStore(projectId));
   const view = getProjectViewStore(projectId);
+  const { showPullRequests, showWorktrees } = useDeveloperSurfaces();
 
   if (!context || !view) return null;
 
-  const activeView = view.activeView;
+  const items = projectViewItems.filter((item) => {
+    if (item.value === 'pull-request') return showPullRequests;
+    if (item.value === 'workspaces') return showWorktrees;
+    return true;
+  });
+  // A project last left on a hidden section falls back to Tasks. The stored
+  // value is untouched, so turning the mode off brings the section back.
+  const activeView = items.some((item) => item.value === view.activeView)
+    ? view.activeView
+    : 'tasks';
   return (
     <div className="flex min-h-0 w-full flex-col gap-6">
       <PillTabs
-        items={projectViewItems}
+        items={items}
         value={activeView}
         onValueChange={(nextView) => view.setProjectView(nextView)}
         ariaLabel="Project sections"

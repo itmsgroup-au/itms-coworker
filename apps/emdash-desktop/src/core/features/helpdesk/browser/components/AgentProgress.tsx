@@ -1,43 +1,40 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import {
   EMPTY_TRANSCRIPT_SUMMARY,
-  readTaskTranscript,
   type TaskTranscriptSummary,
   type TranscriptStep,
 } from '@core/features/conversations/api/browser/acp-transcript';
-import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
+import {
+  getTaskProgressSnapshot,
+  subscribeTaskProgress,
+} from '@core/features/helpdesk/api/browser/agent-progress-source';
 import { cn } from '@core/primitives/styling/browser/cn';
 
 export type ProgressStep = TranscriptStep;
 export type TaskProgress = TaskTranscriptSummary;
-const EMPTY = EMPTY_TRANSCRIPT_SUMMARY;
-const readTaskProgress = readTaskTranscript;
 
-export function useTaskProgress(taskId: string | null, intervalMs = 2000): TaskProgress {
-  const [progress, setProgress] = useState<TaskProgress>(EMPTY);
-  useEffect(() => {
-    if (!taskId) {
-      setProgress(EMPTY);
-      return;
-    }
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      try {
-        setProgress(readTaskProgress(taskId));
-      } catch {
-        setProgress(EMPTY);
-      }
-    };
-    tick();
-    const timer = setInterval(tick, intervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [taskId, intervalMs]);
-  return progress;
+/**
+ * A task's agent progress, read from the ACP live models rather than from a
+ * mounted chat panel, so a ticket whose task view was never opened still shows
+ * its steps. One shared subscription per task id; there is no polling.
+ *
+ * The second argument is accepted for callers written against the old polling
+ * signature and is ignored.
+ */
+export function useTaskProgress(taskId: string | null, _intervalMs?: number): TaskProgress {
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      if (!taskId) return () => {};
+      return subscribeTaskProgress(taskId, listener);
+    },
+    [taskId]
+  );
+  const getSnapshot = useCallback(
+    () => (taskId ? getTaskProgressSnapshot(taskId) : EMPTY_TRANSCRIPT_SUMMARY),
+    [taskId]
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export const AgentProgressList = observer(function AgentProgressList({
@@ -48,16 +45,18 @@ export const AgentProgressList = observer(function AgentProgressList({
   max?: number;
 }) {
   const progress = useTaskProgress(taskId);
-  const conversations = getConversationsForTask(taskId);
   if (!progress.available) {
-    return (
-      <div className="text-xs text-foreground-muted">
-        {conversations ? 'Open the task once to see its steps here.' : 'The task is starting.'}
-      </div>
-    );
+    return <div className="text-xs text-foreground-muted">Reading the worker's output…</div>;
   }
   const shown = progress.steps.slice(-max);
   const hidden = progress.steps.length - shown.length;
+  if (shown.length === 0 && progress.suspended) {
+    return (
+      <div className="text-xs text-foreground-muted">
+        The worker is paused. Open the task to replay its earlier steps.
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-1">
       {hidden > 0 && (

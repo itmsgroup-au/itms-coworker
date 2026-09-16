@@ -1,10 +1,19 @@
 import { MicroLabel } from '@emdash/ui/react/primitives';
-import { Clock, FolderInput, MessageSquareShare, Settings, Ticket } from 'lucide-react';
+import {
+  ChevronRight,
+  Clock,
+  FolderInput,
+  MessageSquareShare,
+  Settings,
+  Ticket,
+  Workflow,
+} from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { HelpdeskOpenCount } from '@core/features/helpdesk/contributions/browser/open-count';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
+import { jidoViewDef } from '@core/features/jido/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
@@ -36,6 +45,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { currentView } = useWorkspaceSlots();
 
   const openFeedbackModal = useOpenModal('feedbackModal');
+  // Projects are the folders the work happens in, not the work itself, so the
+  // group starts closed and the ticket queue and procedures sit above it.
+  const [showProjects, setShowProjects] = React.useState(false);
   const { isDragOver, onDragOver, onDragEnter, onDragLeave, onDrop } = useSidebarDrop();
 
   return (
@@ -62,35 +74,59 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         <SidebarContent className="flex flex-col">
           <SidebarGroup className="mb-0">
             <div className="flex h-[40px] items-center pl-5">
-              <MicroLabel className="font-medium text-foreground-tertiary-passive">
-                Tasks
-              </MicroLabel>
+              <MicroLabel className="font-medium text-foreground-tertiary-passive">Work</MicroLabel>
             </div>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuButton
                   isActive={isCurrentView(currentView, 'helpdesk')}
                   onClick={() => navigate(helpdeskViewDef({}))}
-                  aria-label="Helpdesk"
+                  aria-label="Tickets"
                   className="w-full justify-between"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <Ticket className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                    <span className="truncate">Helpdesk</span>
+                    <span className="truncate">Tickets</span>
                   </span>
                   <HelpdeskOpenCount />
+                </SidebarMenuButton>
+                <SidebarMenuButton
+                  isActive={isCurrentView(currentView, 'jido')}
+                  onClick={() => navigate(jidoViewDef({}))}
+                  aria-label="Procedures"
+                  className="w-full justify-between"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Workflow className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                    <span className="truncate">Procedures</span>
+                  </span>
                 </SidebarMenuButton>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
           <SidebarPinnedTaskList />
-          <SidebarGroup className="mb-0 flex min-h-0 flex-1 flex-col">
-            <ProjectsGroupLabel />
-            <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
-              <SidebarMenu className="flex min-h-0 flex-1 flex-col">
-                <SidebarVirtualList />
-              </SidebarMenu>
-            </SidebarGroupContent>
+          <SidebarGroup className={cn('mb-0 flex min-h-0 flex-col', showProjects && 'flex-1')}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowProjects((open) => !open)}
+                aria-expanded={showProjects}
+                aria-label={showProjects ? 'Hide projects' : 'Show projects'}
+                className="absolute top-0 left-1 z-10 flex h-[40px] w-4 cursor-pointer items-center justify-center text-foreground-tertiary-passive focus:outline-none focus-visible:outline-none"
+              >
+                <ChevronRight
+                  className={cn('size-3.5 transition-transform', showProjects && 'rotate-90')}
+                />
+              </button>
+              <ProjectsGroupLabel />
+            </div>
+            {showProjects && (
+              <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
+                <SidebarMenu className="flex min-h-0 flex-1 flex-col">
+                  <SidebarVirtualList />
+                </SidebarMenu>
+              </SidebarGroupContent>
+            )}
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>

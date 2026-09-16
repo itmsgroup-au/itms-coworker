@@ -40,6 +40,7 @@ import {
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { type SidebarTab } from '@core/features/tasks/api/browser/types';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
+import { useDeveloperSurfaces } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 import {
   useTaskComposition,
   useWorkspace,
@@ -131,6 +132,7 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
   const linesAdded = gitCheckout.totalLinesAdded;
   const linesDeleted = gitCheckout.totalLinesDeleted;
   const hasDiffStats = linesAdded > 0 || linesDeleted > 0;
+  const { showSourceControl } = useDeveloperSurfaces();
 
   const projectContext = asAvailableProject(getProjectStore(projectId));
 
@@ -351,40 +353,42 @@ const ActiveTaskTitlebar = observer(function ActiveTaskTitlebar({
             }}
             className="bg-transparent"
           >
-            <Tooltip.Root>
-              <Tooltip.Trigger
-                render={
-                  <ToggleGroup.Item
-                    value="changes"
-                    size="sm"
-                    aria-label="Changes"
-                    className={cn('w-auto! min-w-7! gap-0', hasDiffStats && 'w-full px-2!')}
-                  >
-                    <FileDiff className="size-3.5" />
-                    <span
-                      className={cn(
-                        'overflow-hidden transition-[max-width,padding-left] duration-500 ease-in-out flex items-center tabular-nums text-xs leading-none gap-1',
-                        hasDiffStats ? 'max-w-20 pl-1' : 'max-w-0 pl-0'
-                      )}
+            {showSourceControl && (
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  render={
+                    <ToggleGroup.Item
+                      value="changes"
+                      size="sm"
+                      aria-label="Changes"
+                      className={cn('w-auto! min-w-7! gap-0', hasDiffStats && 'w-full px-2!')}
                     >
-                      {linesAdded > 0 && (
-                        <span className="text-foreground-diff-added">
-                          +{formatDiffLineCount(linesAdded)}
-                        </span>
-                      )}
-                      {linesDeleted > 0 && (
-                        <span className="text-foreground-diff-deleted">
-                          -{formatDiffLineCount(linesDeleted)}
-                        </span>
-                      )}
-                    </span>
-                  </ToggleGroup.Item>
-                }
-              />
-              <Tooltip.Content>
-                Changes <BoundShortcut command="task.sidebarChanges" variant="keycaps" />
-              </Tooltip.Content>
-            </Tooltip.Root>
+                      <FileDiff className="size-3.5" />
+                      <span
+                        className={cn(
+                          'overflow-hidden transition-[max-width,padding-left] duration-500 ease-in-out flex items-center tabular-nums text-xs leading-none gap-1',
+                          hasDiffStats ? 'max-w-20 pl-1' : 'max-w-0 pl-0'
+                        )}
+                      >
+                        {linesAdded > 0 && (
+                          <span className="text-foreground-diff-added">
+                            +{formatDiffLineCount(linesAdded)}
+                          </span>
+                        )}
+                        {linesDeleted > 0 && (
+                          <span className="text-foreground-diff-deleted">
+                            -{formatDiffLineCount(linesDeleted)}
+                          </span>
+                        )}
+                      </span>
+                    </ToggleGroup.Item>
+                  }
+                />
+                <Tooltip.Content>
+                  Changes <BoundShortcut command="task.sidebarChanges" variant="keycaps" />
+                </Tooltip.Content>
+              </Tooltip.Root>
+            )}
             <Tooltip.Root>
               <Tooltip.Trigger
                 render={

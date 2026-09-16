@@ -6,6 +6,7 @@ import KeyboardSettingsCard from '../components/KeyboardSettingsCard';
 import SidebarMetadataSettingsCard from '../components/SidebarMetadataSettingsCard';
 import TerminalSettingsCard from '../components/TerminalSettingsCard';
 import ThemeCard from '../components/ThemeCard';
+import { WorkbenchModeCard } from '../components/WorkbenchModeCard';
 
 export function InterfaceSettingsPage() {
   return (
@@ -15,6 +16,9 @@ export function InterfaceSettingsPage() {
         title="Interface"
         description="Customize the appearance and behavior of the app."
       />
+      <SettingsSection title="Mode" bare>
+        <WorkbenchModeCard />
+      </SettingsSection>
       <SettingsSection title="Color mode" bare>
         <ThemeCard />
       </SettingsSection>

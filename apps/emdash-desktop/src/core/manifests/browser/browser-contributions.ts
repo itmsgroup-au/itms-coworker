@@ -4,6 +4,7 @@ import { devPerfBrowserContributions } from '@core/features/dev-perf/contributio
 import { editorBrowserContributions } from '@core/features/editor/contributions/browser';
 import { helpdeskBrowserContributions } from '@core/features/helpdesk/contributions/browser';
 import { integrationsBrowserContributions } from '@core/features/integrations/contributions/browser';
+import { jidoBrowserContributions } from '@core/features/jido/contributions/browser';
 import { libraryBrowserContributions } from '@core/features/library/contributions/browser';
 import { machinesBrowserContributions } from '@core/features/machines/contributions/browser';
 import { projectsBrowserContributions } from '@core/features/projects/contributions/browser';
@@ -20,6 +21,7 @@ export const featureViewRuntimes = [
   ...settingsBrowserContributions.views,
   ...tasksBrowserContributions.views,
   ...helpdeskBrowserContributions.views,
+  ...jidoBrowserContributions.views,
 ] as const;
 
 export const featureModalDefs = [

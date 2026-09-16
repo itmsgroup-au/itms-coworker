@@ -1,18 +1,7 @@
 import { SettingsCard, SettingsRow, SettingsSection } from '@emdash/ui/react/patterns';
-import { Badge, Button, Input, Select, SeparatedList, toast } from '@emdash/ui/react/primitives';
-import {
-  Check,
-  Download,
-  FolderOpen,
-  KeyRound,
-  Pencil,
-  Plug,
-  Plus,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
-import { useState } from 'react';
+import { Button, Input, Select, SeparatedList, toast } from '@emdash/ui/react/primitives';
+import { Check, Download, KeyRound, Plus, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { projectViewDef } from '@core/features/projects/contributions/views';
@@ -20,12 +9,9 @@ import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-s
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import type { OdooProfile } from '@core/primitives/app-settings/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
+import { type McpState, OdooProfileRow, type TestState } from './OdooProfileRow';
 
 type Draft = Omit<OdooProfile, 'id'> & { id?: string };
-type TestState =
-  | { state: 'idle' }
-  | { state: 'testing' }
-  | { state: 'done'; text: string; ok: boolean };
 
 const EMPTY_DRAFT: Draft = { name: '', url: 'https://', db: '', user: '', password: '' };
 
@@ -35,9 +21,13 @@ export function OdooProfilesCard() {
   const { navigate } = useNavigate();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [mcp, setMcp] = useState<Record<string, McpState>>({});
   const [busy, setBusy] = useState(false);
+  /** One automatic test per page mount, for the default profile only. */
+  const autoTested = useRef(false);
 
-  const profiles = value?.profiles ?? [];
+  const storedProfiles = value?.profiles;
+  const profiles = storedProfiles ?? [];
   const defaultProfileId = value?.defaultProfileId ?? null;
   const disabled = isLoading || isSaving || busy;
 
@@ -85,7 +75,7 @@ export function OdooProfilesCard() {
     });
   };
 
-  const test = async (profile: OdooProfile) => {
+  const test = useCallback(async (profile: OdooProfile) => {
     setTests((prev) => ({ ...prev, [profile.id]: { state: 'testing' } }));
     try {
       const result = await (await getOdooClient()).testConnection(profile);
@@ -99,7 +89,17 @@ export function OdooProfilesCard() {
         [profile.id]: { state: 'done', text: message(error), ok: false },
       }));
     }
-  };
+  }, []);
+
+  // Test the default server once, when the page opens, so the status is there
+  // without clicking. Never more than once per mount, and never the others.
+  useEffect(() => {
+    if (autoTested.current || isLoading || !defaultProfileId) return;
+    const profile = storedProfiles?.find((candidate) => candidate.id === defaultProfileId);
+    if (!profile) return;
+    autoTested.current = true;
+    void test(profile);
+  }, [defaultProfileId, isLoading, storedProfiles, test]);
 
   const mergeProfiles = async (incoming: OdooProfile[], source: string, skipped: string[]) => {
     // Merge by name: a server already listed is refreshed, a new one is appended.
@@ -136,6 +136,7 @@ export function OdooProfilesCard() {
     setBusy(true);
     try {
       const folder = await (await getOdooClient()).prepareProject(profile);
+      setMcp((prev) => ({ ...prev, [profile.id]: { server: folder.mcpServer } }));
       const result = await getProjectManagerStore().startProjectCreation(
         { type: 'local' },
         { mode: 'pick', name: folder.name, path: folder.path, initGitRepository: false }
@@ -252,77 +253,24 @@ export function OdooProfilesCard() {
           <div className="text-xs text-foreground-passive">
             One entry per Odoo server. The source of truth is 1Password: items tagged odoo-profile
             in the AI_MCP vault, titled &quot;odoo - name&quot;. Test checks the version and logs in
-            over JSON-RPC.
+            over JSON-RPC; the default server is tested once each time this page opens.
           </div>
 
           <div className="mt-2 flex flex-col divide-y divide-border/40">
-            {profiles.map((profile) => {
-              const status = tests[profile.id] ?? { state: 'idle' };
-              return (
-                <div key={profile.id} className="flex flex-col gap-1 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                      {profile.name}
-                      <span className="ml-2 text-xs text-foreground-passive">
-                        {profile.url} · {profile.db} · {profile.user}
-                      </span>
-                    </span>
-                    {profile.id === defaultProfileId && <Badge>default</Badge>}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={disabled}
-                      onClick={() => void openProject(profile)}
-                    >
-                      <FolderOpen className="size-4" />
-                      Project
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={disabled || status.state === 'testing'}
-                      onClick={() => void test(profile)}
-                    >
-                      <Plug className="size-4" />
-                      {status.state === 'testing' ? 'Testing…' : 'Test'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon
-                      className="size-7 shrink-0 text-foreground-muted"
-                      disabled={disabled}
-                      aria-label={`Edit ${profile.name}`}
-                      onClick={() => setDraft({ ...profile })}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon
-                      className="size-7 shrink-0 text-foreground-muted"
-                      disabled={disabled}
-                      aria-label={`Remove ${profile.name}`}
-                      onClick={() => remove(profile)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                  {status.state === 'done' && (
-                    <div
-                      className={
-                        status.ok ? 'text-xs text-foreground-muted' : 'text-destructive text-xs'
-                      }
-                    >
-                      {status.text}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {profiles.map((profile) => (
+              <OdooProfileRow
+                key={profile.id}
+                profile={profile}
+                isDefault={profile.id === defaultProfileId}
+                disabled={disabled}
+                test={tests[profile.id] ?? { state: 'idle' }}
+                mcp={mcp[profile.id]}
+                onOpenProject={() => void openProject(profile)}
+                onTest={() => void test(profile)}
+                onEdit={() => setDraft({ ...profile })}
+                onRemove={() => remove(profile)}
+              />
+            ))}
             {profiles.length === 0 && (
               <div className="py-2 text-xs text-foreground-passive">No Odoo servers yet.</div>
             )}

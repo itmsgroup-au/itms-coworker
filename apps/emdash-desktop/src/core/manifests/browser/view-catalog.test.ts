@@ -15,6 +15,7 @@ describe('viewCatalog', () => {
       'task',
       'settings',
       'helpdesk',
+      'jido',
     ]);
   });
 
@@ -65,6 +66,7 @@ describe('viewCatalog', () => {
       task: 'task_viewed',
       settings: 'settings_viewed',
       helpdesk: 'helpdesk_viewed',
+      jido: 'jido_viewed',
     });
   });
 });
