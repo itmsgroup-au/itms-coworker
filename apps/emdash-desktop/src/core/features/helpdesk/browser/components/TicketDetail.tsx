@@ -12,14 +12,18 @@ import {
   useHelpdeskMessages,
   useHelpdeskRelated,
 } from '@core/features/helpdesk/api/browser/use-helpdesk';
-import type { HelpdeskMessage, HelpdeskTicket } from '@core/features/odoo/api/contract';
+import type {
+  HelpdeskMessage,
+  HelpdeskTicket,
+  OdooProfileSummary,
+} from '@core/features/odoo/api/contract';
 import {
   getProjectStore,
   projectData,
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
-import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
+import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { AgentProgressList } from './AgentProgress';
@@ -34,7 +38,7 @@ export const TicketDetail = observer(function TicketDetail({
   onClose,
   onAssign,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
   onClose: () => void;
@@ -140,7 +144,7 @@ function TabButton({
 // Thread: description first, then the chatter oldest to newest
 // ---------------------------------------------------------------------------
 
-function ThreadTab({ profile, ticket }: { profile: OdooProfile; ticket: HelpdeskTicket }) {
+function ThreadTab({ profile, ticket }: { profile: OdooProfileSummary; ticket: HelpdeskTicket }) {
   const messages = useHelpdeskMessages(profile, ticket.id);
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
@@ -213,7 +217,7 @@ function Bubble({
 // Customer: the contact and their other tickets
 // ---------------------------------------------------------------------------
 
-function CustomerTab({ profile, ticket }: { profile: OdooProfile; ticket: HelpdeskTicket }) {
+function CustomerTab({ profile, ticket }: { profile: OdooProfileSummary; ticket: HelpdeskTicket }) {
   const related = useHelpdeskRelated(profile, ticket.id);
   if (related.isLoading)
     return <div className="px-4 py-3 text-xs text-foreground-muted">Loading…</div>;
@@ -273,7 +277,7 @@ const AgentTab = observer(function AgentTab({
   ticket,
   assignment,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
   onAssign: () => void;
@@ -398,7 +402,7 @@ function TicketNoteBox({
   initialBody,
   onDone,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   initialBody: string;
   onDone: () => void;

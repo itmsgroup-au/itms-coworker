@@ -4,14 +4,14 @@ import { when } from 'mobx';
 import { useCallback, useState } from 'react';
 import { useAgentAvailability } from '@core/features/agents/api/browser/components/agent-selector/use-agent-availability';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
-import type { HelpdeskTicket } from '@core/features/odoo/api/contract';
+import type { HelpdeskTicket, OdooProfileSummary } from '@core/features/odoo/api/contract';
 import {
   getProjectManagerStore,
   getProjectStore,
   projectData,
 } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
-import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
+import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 
 /** The worker the one-click button uses when nobody chose one. */
 const PREFERRED_PROVIDER = 'hermes' as AgentProviderId;
@@ -52,7 +52,7 @@ export function useTicketAgentLauncher({
   profile,
   onAssigned,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   onAssigned: (assignment: HelpdeskAssignment) => void;
 }): TicketAgentLauncher {
   const [states, setStates] = useState<Record<number, TicketAgentState>>({});
@@ -91,7 +91,7 @@ export function useTicketAgentLauncher({
       try {
         const projectId =
           startOptions?.projectId ??
-          (await resolveOdooProjectId(profile, (step) =>
+          (await resolveOdooProjectId(profile.id, (step) =>
             setState(ticket.id, { phase: 'starting', step })
           ));
 
@@ -102,7 +102,7 @@ export function useTicketAgentLauncher({
 
         setState(ticket.id, { phase: 'starting', step: 'Starting the worker…' });
         const taskId = crypto.randomUUID();
-        const atlasProfile = await resolveAtlasProfile(profile);
+        const atlasProfile = await resolveAtlasProfile(profile.id);
         await taskManager.createTask({
           id: taskId,
           projectId,
@@ -168,13 +168,13 @@ export function useTicketAgentLauncher({
  * fallback for projects added by hand. Creates the project when there is none.
  */
 async function resolveOdooProjectId(
-  profile: OdooProfile,
+  profileId: string,
   onStep: (step: string) => void
 ): Promise<string> {
-  const folder = await (await getOdooClient()).prepareProject(profile);
+  const folder = await (await getOdooClient()).prepareProject({ profileId });
   const byMarker = findProjectIdByPath(folder.path);
   if (byMarker) return byMarker;
-  const bySuffix = findProjectIdByPathSuffix(`odoo-${profile.id}`);
+  const bySuffix = findProjectIdByPathSuffix(`odoo-${profileId}`);
   if (bySuffix) return bySuffix;
 
   onStep('Adding the project…');
@@ -238,32 +238,28 @@ function labelFor(
   return options.find((o) => o.agentId === provider)?.label ?? provider;
 }
 
-/** What the worker is told about the ticket before it starts. */
 /**
  * The name `atlas` and the `odoo` CLI know this server by.
  *
  * `~/.odoo-profiles.json` is keyed by that name (for example `ITMS19`), which
  * is neither this app's profile id (`itms-19`) nor its display name
  * (`itms - 19`). Measured 16 Sep 2026: a ticket prompt that passed the id made
- * the agent's first command fail with `unknown Odoo profile "itms-19"`. Match
- * on the server it points at instead, and return null rather than guess.
+ * the agent's first command fail with `unknown Odoo profile "itms-19"`. The
+ * main process matches on the server the profile points at and returns null
+ * rather than guess, so a failure here means no atlas profile name, not a
+ * wrong one.
  */
-async function resolveAtlasProfile(profile: OdooProfile): Promise<string | null> {
-  const normalize = (url: string) => url.trim().replace(/\/+$/, '').toLowerCase();
+async function resolveAtlasProfile(profileId: string): Promise<string | null> {
   try {
-    const file = await (await getOdooClient()).readProfilesFile();
-    const match = file.profiles.find(
-      (candidate: OdooProfile) =>
-        normalize(candidate.url) === normalize(profile.url) && candidate.db === profile.db
-    );
-    return match?.name ?? null;
+    return await (await getOdooClient()).atlasProfileName({ profileId });
   } catch {
     return null;
   }
 }
 
+/** What the worker is told about the ticket before it starts. */
 export function ticketPrompt(
-  profile: OdooProfile,
+  profile: OdooProfileSummary,
   ticket: HelpdeskTicket,
   atlasProfile?: string | null
 ): string {

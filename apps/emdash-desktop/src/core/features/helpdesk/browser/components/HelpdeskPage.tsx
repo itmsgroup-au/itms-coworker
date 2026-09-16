@@ -22,7 +22,11 @@ import {
 import { postAssignNote } from '@core/features/helpdesk/contributions/browser/assign-note';
 import { assignmentKey } from '@core/features/helpdesk/contributions/settings';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
-import type { HelpdeskTeam, HelpdeskTicket } from '@core/features/odoo/api/contract';
+import type {
+  HelpdeskTeam,
+  HelpdeskTicket,
+  OdooProfileSummary,
+} from '@core/features/odoo/api/contract';
 import {
   getProjectManagerStore,
   getProjectStore,
@@ -33,7 +37,7 @@ import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-s
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
-import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
+import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 import {
   useCurrentViewParams,
   useNavigate,
@@ -121,7 +125,7 @@ const TeamOverview = observer(function TeamOverview({
   profile,
   onPickTeam,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   onPickTeam: (teamId: number | null) => void;
 }) {
   const teams = useHelpdeskTeams(profile);
@@ -223,7 +227,7 @@ const TicketList = observer(function TicketList({
   onBack,
   onPickTeam,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   teamId: number | undefined;
   selectedTicketId: number | null;
   onSelect: (ticketId: number | null) => void;
@@ -656,7 +660,7 @@ const AssignRow = observer(function AssignRow({
   onCancel,
   onStarted,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   launcher: TicketAgentLauncher;
   onCancel: () => void;
@@ -779,7 +783,7 @@ function useProjectOptions(): ProjectOption[] {
 
 /** Tickets with a working agent, counted per Odoo team. Call inside `observer`. */
 function useActiveCountsByTeam(
-  profile: OdooProfile,
+  profile: OdooProfileSummary,
   assignments: Record<string, HelpdeskAssignment>
 ): Record<number, number> {
   const tickets = useHelpdeskTickets(profile);

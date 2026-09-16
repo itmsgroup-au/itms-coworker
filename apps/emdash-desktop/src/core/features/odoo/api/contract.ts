@@ -1,23 +1,37 @@
 import { defineContract, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
+import type { OdooProfileSummary } from '@core/primitives/app-settings/api';
 
 export const odooDomain = 'odoo' as const;
+
+/**
+ * One Odoo server as the renderer sees it: metadata, never a credential.
+ * Defined with the `odoo` settings type it is stored as, and surfaced here so
+ * callers can take it from `@core/features/odoo/api` with the contract.
+ */
+export type { OdooProfileSummary };
 
 export type OdooConnectionTestResult =
   | { ok: true; serverVersion: string; uid: number; userName: string; durationMs: number }
   | { ok: false; error: string; durationMs: number };
 
-export type OdooProfilesSource = {
-  source: string;
-  profiles: OdooProfile[];
-  skipped: string[];
+/** What the settings page renders: the list plus which one is the default. */
+export type OdooProfileList = {
+  profiles: OdooProfileSummary[];
+  defaultProfileId: string | null;
 };
 
-export type OdooProfilesFile = {
-  path: string;
-  exists: boolean;
-  profiles: OdooProfile[];
+/** The outcome of re-reading the 1Password vault. */
+export type OdooProfilesRefresh = OdooProfileList & {
+  /** Where they came from, for the toast: "1Password vault AI_MCP, tag odoo-profile". */
+  source: string;
+  /** Vault item titles that could not be used, with the reason. Never a secret. */
+  skipped: string[];
+  /**
+   * False when the OS keychain is unavailable, so the refreshed credentials are
+   * held for this session only and 1Password is read again next launch.
+   */
+  secretsPersisted: boolean;
 };
 
 export type OdooProjectFolder = {
@@ -169,28 +183,53 @@ export type HelpdeskRelated = {
   previousTickets: HelpdeskRelatedTicket[];
 };
 
+/** Every procedure names the server by id; the credential never crosses the wire. */
+const profileInput = z.object({ profileId: z.string().min(1) });
+
 export const odooContract = defineContract({
+  /** Every stored server, and which one is the default. */
+  listProfiles: procedure({ input: z.void(), output: z.custom<OdooProfileList>() }),
+  /**
+   * Re-read the 1Password vault: stored metadata is refreshed and each secret is
+   * put in the OS keychain. This is the only way a credential enters the app.
+   */
+  refreshProfilesFromOnePassword: procedure({
+    input: z.object({ vault: z.string().optional() }),
+    output: z.custom<OdooProfilesRefresh>(),
+  }),
+  /** Choose the server an agent works against unless a task says otherwise. */
+  setDefaultProfile: procedure({
+    input: profileInput,
+    output: z.custom<OdooProfileList>(),
+  }),
+  /** Forget a server: its metadata and its cached credential both go. */
+  removeProfile: procedure({
+    input: profileInput,
+    output: z.custom<OdooProfileList>(),
+  }),
   /** Make (or refresh) the local project folder that pairs with a profile. */
   prepareProject: procedure({
-    input: z.custom<OdooProfile>(),
+    input: profileInput,
     output: z.custom<OdooProjectFolder>(),
   }),
-  /** JSON-RPC version_info + authenticate against the server named in the profile. */
+  /** JSON-RPC version_info + authenticate against the server named by the profile. */
   testConnection: procedure({
-    input: z.custom<OdooProfile>(),
+    input: profileInput,
     output: z.custom<OdooConnectionTestResult>(),
   }),
-  /** Read every 1Password item tagged odoo-profile in the vault (default AI_MCP). */
-  readProfilesFromOnePassword: procedure({
-    input: z.object({ vault: z.string().optional() }),
-    output: z.custom<OdooProfilesSource>(),
+  /**
+   * The name `atlas` and the `odoo` CLI know this server by, from
+   * ~/.odoo-profiles.json, matched on url and database. Null when that file has
+   * no entry for it. Read-only, and it reads no credential.
+   */
+  atlasProfileName: procedure({
+    input: profileInput,
+    output: z.custom<string | null>(),
   }),
-  /** Read ~/.odoo-profiles.json (the file atlas and the odoo CLI use). */
-  readProfilesFile: procedure({ input: z.void(), output: z.custom<OdooProfilesFile>() }),
   /** Any model method through object.execute_kw. Read-only use from the renderer. */
   executeKw: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string(),
       method: z.string(),
       args: z.array(z.unknown()),
@@ -201,7 +240,7 @@ export const odooContract = defineContract({
   /** search_read on any model. Limit defaults to 200 and is capped at 500. */
   searchRead: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string().min(1),
       domain: z.array(z.unknown()).optional(),
       fields: z.array(z.string()).optional(),
@@ -214,7 +253,7 @@ export const odooContract = defineContract({
   /** read on a known set of ids. */
   readRecords: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string().min(1),
       ids: z.array(z.number().int()),
       fields: z.array(z.string()).optional(),
@@ -224,7 +263,7 @@ export const odooContract = defineContract({
   /** search_count on any model. */
   searchCount: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string().min(1),
       domain: z.array(z.unknown()).optional(),
     }),
@@ -233,7 +272,7 @@ export const odooContract = defineContract({
   /** fields_get: what fields a model has, and of what type. */
   fieldsGet: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string().min(1),
       attributes: z.array(z.string()).optional(),
     }),
@@ -241,7 +280,7 @@ export const odooContract = defineContract({
   }),
   /** ir.model, optionally filtered by a substring of the technical or display name. */
   listModels: procedure({
-    input: z.object({ profile: z.custom<OdooProfile>(), filter: z.string().optional() }),
+    input: z.object({ profileId: z.string().min(1), filter: z.string().optional() }),
     output: z.custom<OdooResult<OdooModelSummary[]>>(),
   }),
   /**
@@ -250,7 +289,7 @@ export const odooContract = defineContract({
    */
   callMethod: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       model: z.string().min(1),
       method: z.string().min(1),
       args: z.array(z.unknown()),
@@ -261,13 +300,13 @@ export const odooContract = defineContract({
   }),
   /** Helpdesk teams with open-ticket counts. */
   helpdeskTeams: procedure({
-    input: z.object({ profile: z.custom<OdooProfile>() }),
+    input: profileInput,
     output: z.custom<HelpdeskTeam[]>(),
   }),
   /** Open helpdesk tickets, newest activity first, optionally one team. */
   helpdeskTickets: procedure({
     input: z.object({
-      profile: z.custom<OdooProfile>(),
+      profileId: z.string().min(1),
       teamId: z.number().optional(),
       limit: z.number().optional(),
     }),
@@ -275,22 +314,21 @@ export const odooContract = defineContract({
   }),
   /** The chatter of one ticket, oldest first. */
   helpdeskMessages: procedure({
-    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number() }),
+    input: z.object({ profileId: z.string().min(1), ticketId: z.number() }),
     output: z.custom<HelpdeskMessage[]>(),
   }),
   /** The customer behind a ticket and their other tickets. */
   helpdeskRelated: procedure({
-    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number() }),
+    input: z.object({ profileId: z.string().min(1), ticketId: z.number() }),
     output: z.custom<HelpdeskRelated>(),
   }),
   /** Add an internal note to a ticket (the app's only Odoo write). */
   helpdeskPostNote: procedure({
-    input: z.object({ profile: z.custom<OdooProfile>(), ticketId: z.number(), body: z.string() }),
+    input: z.object({
+      profileId: z.string().min(1),
+      ticketId: z.number(),
+      body: z.string(),
+    }),
     output: z.custom<{ messageId: number }>(),
-  }),
-  /** Write the given profiles to ~/.odoo-profiles.json, replacing it. */
-  writeProfilesFile: procedure({
-    input: z.object({ profiles: z.custom<OdooProfile[]>() }),
-    output: z.custom<{ path: string }>(),
   }),
 });

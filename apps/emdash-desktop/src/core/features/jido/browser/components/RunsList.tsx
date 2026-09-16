@@ -1,7 +1,7 @@
 import { Checkbox } from '@emdash/ui/react/primitives';
 import { useState } from 'react';
 import { useJidoRuns, type JidoRun } from '@core/features/jido/api/browser/use-jido';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
+import type { OdooProfileSummary } from '@core/features/odoo/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { ErrorLine, formatWhen, PageHeader } from './shared';
 
@@ -16,12 +16,12 @@ export function RunsList({
   selectedRunId,
   onSelect,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   selectedRunId: number | null;
   onSelect: (runId: number | null) => void;
 }) {
   const [proceduresOnly, setProceduresOnly] = useState(true);
-  const runs = useJidoRuns(profile, { proceduresOnly });
+  const runs = useJidoRuns(profile.id, { proceduresOnly });
   const rows = runs.data ?? [];
   const selected = rows.find((run) => run.id === selectedRunId) ?? null;
 

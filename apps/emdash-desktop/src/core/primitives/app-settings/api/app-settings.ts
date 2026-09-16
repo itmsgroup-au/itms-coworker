@@ -78,25 +78,29 @@ export type BrowserSettings = {
 export type KeyboardSettings = Record<string, string | null | undefined>;
 
 /**
- * One Odoo server an agent can work against. Same shape as ~/.odoo-profiles.json
- * (the file atlas and the odoo CLI read), so a profile round-trips between
- * ITMS CoWorker and the command line unchanged. The password is stored in the
- * local settings database; move it to the keychain before any shared build.
+ * One Odoo server an agent can work against, without its credential.
+ *
+ * 1Password is the only source of Odoo passwords and API keys. What a secret is
+ * cached in - Electron `safeStorage`, so the app still works while 1Password is
+ * locked - is the node side's business; nothing in the settings database, on the
+ * wire, or in the renderer carries a password.
  */
-export type OdooProfile = {
+export type OdooProfileSummary = {
   id: string;
   name: string;
   url: string;
   db: string;
   user: string;
-  password: string;
   description?: string;
   odooVersion?: string;
 };
 
+/** @deprecated Name kept for in-flight imports. Use {@link OdooProfileSummary}. */
+export type OdooProfile = OdooProfileSummary;
+
 export type OdooSettings = {
   defaultProfileId: string | null;
-  profiles: OdooProfile[];
+  profiles: OdooProfileSummary[];
 };
 
 /** One helpdesk ticket handed to an agent: the ITMS CoWorker task that is working it. */

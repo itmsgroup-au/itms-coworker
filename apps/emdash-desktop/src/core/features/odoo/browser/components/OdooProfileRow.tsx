@@ -1,6 +1,6 @@
 import { Badge, Button } from '@emdash/ui/react/primitives';
-import { FolderOpen, Pencil, Plug, Trash2 } from 'lucide-react';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
+import { FolderOpen, Plug, Trash2 } from 'lucide-react';
+import type { OdooProfileSummary } from '@core/features/odoo/api';
 
 /** How the last connection test for one profile ended. */
 export type TestState =
@@ -18,18 +18,22 @@ export type TestState =
 export type McpState = { server: string | null };
 
 type Props = {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   isDefault: boolean;
   disabled: boolean;
   test: TestState;
   mcp: McpState | undefined;
   onOpenProject: () => void;
   onTest: () => void;
-  onEdit: () => void;
   onRemove: () => void;
 };
 
-/** One Odoo server in the list, with its connection and agent-tooling status. */
+/**
+ * One Odoo server in the list, with its connection and agent-tooling status.
+ *
+ * The row is read-only on purpose: everything shown here came from the
+ * 1Password item, so there is nothing here for a person to hand-edit.
+ */
 export function OdooProfileRow({
   profile,
   isDefault,
@@ -38,7 +42,6 @@ export function OdooProfileRow({
   mcp,
   onOpenProject,
   onTest,
-  onEdit,
   onRemove,
 }: Props) {
   return (
@@ -48,6 +51,7 @@ export function OdooProfileRow({
           {profile.name}
           <span className="ml-2 text-xs text-foreground-passive">
             {profile.url} · {profile.db} · {profile.user}
+            {profile.odooVersion ? ` · Odoo ${profile.odooVersion}` : ''}
           </span>
         </span>
         {isDefault && <Badge>default</Badge>}
@@ -71,23 +75,15 @@ export function OdooProfileRow({
           icon
           className="size-7 shrink-0 text-foreground-muted"
           disabled={disabled}
-          aria-label={`Edit ${profile.name}`}
-          onClick={onEdit}
-        >
-          <Pencil className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          icon
-          className="size-7 shrink-0 text-foreground-muted"
-          disabled={disabled}
           aria-label={`Remove ${profile.name}`}
           onClick={onRemove}
         >
           <Trash2 className="size-4" />
         </Button>
       </div>
+      {profile.description && (
+        <div className="text-xs text-foreground-passive">{profile.description}</div>
+      )}
       {test.state === 'testing' && (
         <div className="text-xs text-foreground-passive">Checking the connection…</div>
       )}

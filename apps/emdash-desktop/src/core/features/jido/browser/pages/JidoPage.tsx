@@ -1,8 +1,8 @@
 import { Button } from '@emdash/ui/react/primitives';
 import { useDefaultOdooProfile, useJidoApprovals } from '@core/features/jido/api/browser/use-jido';
 import { jidoViewDef } from '@core/features/jido/contributions/views';
+import type { OdooProfileSummary } from '@core/features/odoo/api';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
 import {
   useCurrentViewParams,
   useNavigate,
@@ -62,11 +62,11 @@ function Tabs({
   tab,
   onPick,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   tab: 'runs' | 'approvals';
   onPick: (tab: 'runs' | 'approvals') => void;
 }) {
-  const approvals = useJidoApprovals(profile, { proceduresOnly: false });
+  const approvals = useJidoApprovals(profile.id, { proceduresOnly: false });
   const waiting = approvals.data?.length ?? 0;
   return (
     <div className="flex gap-1 border-b border-border">

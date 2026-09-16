@@ -8,7 +8,7 @@ export function OdooSettingsPage() {
       <PageLayout.Header
         sticky
         title="Odoo"
-        description="The Odoo servers ITMS CoWorker agents work against, as profiles."
+        description="The Odoo servers ITMS CoWorker agents work against. They come from 1Password."
       />
       <OdooProfilesCard />
       <SettingsSection title="Helpdesk write-back" bare>

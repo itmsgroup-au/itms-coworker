@@ -1,6 +1,7 @@
 import { postHelpdeskNote } from '@core/features/helpdesk/api/browser/use-helpdesk';
+import type { OdooProfileSummary } from '@core/features/odoo/api/contract';
 import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
-import type { HelpdeskAssignment, OdooProfile } from '@core/primitives/app-settings/api';
+import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import type { HelpdeskSettingsValue } from '../settings';
 
@@ -17,7 +18,7 @@ export function assignNoteBody(assignment: HelpdeskAssignment): string {
  * failed Odoo write must not fail the assignment that already succeeded.
  */
 export async function postAssignNote(
-  profile: OdooProfile,
+  profile: OdooProfileSummary,
   settings: HelpdeskSettingsValue | undefined,
   assignment: HelpdeskAssignment
 ): Promise<void> {

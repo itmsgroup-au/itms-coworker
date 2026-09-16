@@ -1,15 +1,44 @@
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import type {
+  OdooProfileList,
+  OdooProfileSummary,
+  OdooRecord,
+  OdooResult,
+} from '@core/features/odoo/api';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
-import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-settings-key';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
 
 export const JIDO_QUERY_KEY = ['jido'] as const;
 
-/** The default Odoo server from Settings → Odoo, or null when none is chosen. */
-export function useDefaultOdooProfile(): { profile: OdooProfile | null; isLoading: boolean } {
-  const { value, isLoading } = useAppSettingsKey('odoo');
-  const profile = value?.profiles.find((p) => p.id === value.defaultProfileId) ?? null;
-  return { profile, isLoading };
+/**
+ * The default Odoo server from Settings → Odoo, or null when none is chosen.
+ *
+ * The list comes from the odoo domain, which resolves credentials from
+ * 1Password and the OS keychain in the main process. What arrives here is a
+ * summary: id, name, url, db, user. No password is read, stored or passed on.
+ * Settings only supplies which id is the default; if that id is not in the
+ * list, the first server is used.
+ */
+export function useDefaultOdooProfile(): {
+  profile: OdooProfileSummary | null;
+  isLoading: boolean;
+} {
+  // The node side owns the default now, so it comes back with the list rather
+  // than being read from app settings; a renderer read would go stale after a
+  // refresh from 1Password.
+  const profiles = useQuery<OdooProfileList, Error>({
+    queryKey: [...JIDO_QUERY_KEY, 'profiles'],
+    queryFn: async () => (await getOdooClient()).listProfiles(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const rows = profiles.data?.profiles ?? [];
+  const chosen = rows.find((row) => row.id === profiles.data?.defaultProfileId) ?? rows[0] ?? null;
+  return { profile: chosen, isLoading: profiles.isLoading };
+}
+
+/** Every generic Odoo procedure answers with this envelope; a failure is thrown. */
+function unwrap<T>(result: OdooResult<T>): T {
+  if (!result.ok) throw new Error(result.error.message);
+  return result.data;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +127,14 @@ type ApprovalRow = {
   approver_id: Many2one;
   task_id: Many2one;
 };
+
+/**
+ * Odoo hands back `Record<string, unknown>` per row, because the value shape
+ * depends on each field's Odoo type. These two casts name the shape of the
+ * fields we asked for, and are the only place the slice asserts it.
+ */
+const asRunRows = (rows: OdooRecord[]): RunRow[] => rows as unknown as RunRow[];
+const asApprovalRows = (rows: OdooRecord[]): ApprovalRow[] => rows as unknown as ApprovalRow[];
 
 const RUN_FIELDS = [
   'id',
@@ -206,7 +243,7 @@ function toApproval(row: ApprovalRow): JidoApproval {
  * same model.
  */
 export function useJidoRuns(
-  profile: OdooProfile | null,
+  profileId: string | null,
   options: { proceduresOnly: boolean; limit?: number }
 ): UseQueryResult<JidoRun[], Error> {
   const limit = options.limit ?? 100;
@@ -214,24 +251,27 @@ export function useJidoRuns(
     queryKey: [
       ...JIDO_QUERY_KEY,
       'runs',
-      profile?.id ?? 'none',
+      profileId ?? 'none',
       options.proceduresOnly ? 'procedures' : 'all',
       limit,
     ],
-    enabled: !!profile,
+    enabled: !!profileId,
     queryFn: async () => {
-      if (!profile) return [];
+      if (!profileId) return [];
       const domain = options.proceduresOnly ? [['source', '=like', 'jido:%']] : [];
-      const rows = (await (
-        await getOdooClient()
-      ).executeKw({
-        profile,
-        model: 'itms.ai.cp.run',
-        method: 'search_read',
-        args: [domain],
-        kwargs: { fields: RUN_FIELDS, limit, order: 'id desc' },
-      })) as RunRow[];
-      return rows.map(toRun);
+      const rows = unwrap(
+        await (
+          await getOdooClient()
+        ).searchRead({
+          profileId,
+          model: 'itms.ai.cp.run',
+          domain,
+          fields: RUN_FIELDS,
+          order: 'id desc',
+          limit,
+        })
+      );
+      return asRunRows(rows).map(toRun);
     },
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
@@ -240,7 +280,7 @@ export function useJidoRuns(
 
 /** Everything still waiting for a person, newest first. */
 export function useJidoApprovals(
-  profile: OdooProfile | null,
+  profileId: string | null,
   options: { proceduresOnly: boolean; limit?: number } = { proceduresOnly: false }
 ): UseQueryResult<JidoApproval[], Error> {
   const limit = options.limit ?? 100;
@@ -248,25 +288,28 @@ export function useJidoApprovals(
     queryKey: [
       ...JIDO_QUERY_KEY,
       'approvals',
-      profile?.id ?? 'none',
+      profileId ?? 'none',
       options.proceduresOnly ? 'procedures' : 'all',
       limit,
     ],
-    enabled: !!profile,
+    enabled: !!profileId,
     queryFn: async () => {
-      if (!profile) return [];
+      if (!profileId) return [];
       const domain: unknown[] = [['state', '=', 'proposed']];
       if (options.proceduresOnly) domain.push(['source_ref', '=like', 'jido:%']);
-      const rows = (await (
-        await getOdooClient()
-      ).executeKw({
-        profile,
-        model: 'itms.ai.action',
-        method: 'search_read',
-        args: [domain],
-        kwargs: { fields: APPROVAL_FIELDS, limit, order: 'id desc' },
-      })) as ApprovalRow[];
-      return rows.map(toApproval);
+      const rows = unwrap(
+        await (
+          await getOdooClient()
+        ).searchRead({
+          profileId,
+          model: 'itms.ai.action',
+          domain,
+          fields: APPROVAL_FIELDS,
+          order: 'id desc',
+          limit,
+        })
+      );
+      return asApprovalRows(rows).map(toApproval);
     },
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
@@ -304,43 +347,57 @@ export function rejectBlockedReason(approval: JidoApproval): string | null {
   return null;
 }
 
-/** Approve one proposal. Calls `itms.ai.action.action_approve` on that record. */
-export async function approveJidoAction(profile: OdooProfile, actionId: number): Promise<void> {
-  await (
-    await getOdooClient()
-  ).executeKw({
-    profile,
-    model: 'itms.ai.action',
-    method: 'action_approve',
-    args: [[actionId]],
-  });
+/**
+ * Approve one proposal. Calls `itms.ai.action.action_approve` on that record.
+ * This is a write, so it goes through `callMethod` with `confirmWrite: true`;
+ * the person has already seen the record and the exact write in the panel.
+ */
+export async function approveJidoAction(profileId: string, actionId: number): Promise<void> {
+  unwrap(
+    await (
+      await getOdooClient()
+    ).callMethod({
+      profileId,
+      model: 'itms.ai.action',
+      method: 'action_approve',
+      args: [[actionId]],
+      confirmWrite: true,
+    })
+  );
 }
 
 /**
  * Reject one proposal. The reason is written to `reject_reason` first, so the
- * note Odoo posts carries it, then `action_reject` runs on the record.
+ * note Odoo posts carries it, then `action_reject` runs on the record. Both are
+ * writes and both carry `confirmWrite: true`, after the same confirm step.
  */
 export async function rejectJidoAction(
-  profile: OdooProfile,
+  profileId: string,
   actionId: number,
   reason: string
 ): Promise<void> {
   const client = await getOdooClient();
   const trimmed = reason.trim();
   if (trimmed) {
-    await client.executeKw({
-      profile,
-      model: 'itms.ai.action',
-      method: 'write',
-      args: [[actionId], { reject_reason: trimmed }],
-    });
+    unwrap(
+      await client.callMethod({
+        profileId,
+        model: 'itms.ai.action',
+        method: 'write',
+        args: [[actionId], { reject_reason: trimmed }],
+        confirmWrite: true,
+      })
+    );
   }
-  await client.executeKw({
-    profile,
-    model: 'itms.ai.action',
-    method: 'action_reject',
-    args: [[actionId]],
-  });
+  unwrap(
+    await client.callMethod({
+      profileId,
+      model: 'itms.ai.action',
+      method: 'action_reject',
+      args: [[actionId]],
+      confirmWrite: true,
+    })
+  );
 }
 
 /** Drop every Procedures query so the lists re-read after a decision. */

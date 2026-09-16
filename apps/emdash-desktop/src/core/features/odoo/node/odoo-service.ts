@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
+import type { OdooProfileSummary } from '@core/primitives/app-settings/api';
 import {
   classifyOdooMethod,
   ODOO_DEFAULT_LIMIT,
@@ -14,176 +14,121 @@ import {
   type HelpdeskTeam,
   type HelpdeskTicket,
   type OdooConnectionTestResult,
-  type OdooError,
-  type OdooErrorKind,
   type OdooFieldInfo,
   type OdooModelSummary,
-  type OdooProfilesFile,
-  type OdooProfilesSource,
+  type OdooProfileList,
+  type OdooProfilesRefresh,
   type OdooProjectFolder,
   type OdooRecord,
   type OdooResult,
 } from '../api/contract';
+import {
+  classifyOdooFault,
+  classifyTransport,
+  OdooCallError,
+  odooResult,
+  toOdooError,
+} from './odoo-errors';
+import { readOdooProfilesFromOnePassword } from './odoo-onepassword';
+import { atlasProfileNameFor } from './odoo-profiles-file';
+import {
+  findStoredProfile,
+  mergeOnePasswordProfiles,
+  readOdooSettings,
+  writeOdooSettings,
+} from './odoo-profiles-store';
+import {
+  ensureOdooSecretsMigrated,
+  forgetOdooSecret,
+  getOdooSecret,
+  rememberOdooSecrets,
+} from './odoo-secrets';
 
 const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
-// Typed errors
+// Profiles
 // ---------------------------------------------------------------------------
 
-/**
- * Every failure raised inside this module carries a kind. `message` stays the
- * human-readable text the UI already prints, so `testConnection`'s existing
- * `{ ok: false, error: string }` shape is unchanged.
- */
-export class OdooCallError extends Error {
-  readonly kind: OdooErrorKind;
-
-  constructor(kind: OdooErrorKind, message: string) {
-    super(message);
-    this.name = 'OdooCallError';
-    this.kind = kind;
-  }
-}
-
-/** Odoo says "Access Denied" for a bad login and "Access Error" for a bad ACL. */
-function classifyOdooFault(message: string): OdooErrorKind {
-  if (/access denied|invalid (password|api key|credentials)|login refused/i.test(message)) {
-    return 'auth';
-  }
-  if (/session expired|expired session/i.test(message)) return 'auth';
-  if (
-    /access error|you are not allowed|not allowed to (access|read|write|create|unlink)/i.test(
-      message
-    )
-  ) {
-    return 'access-denied';
-  }
-  return 'odoo';
-}
-
-function classifyTransport(error: unknown): OdooErrorKind {
-  const name = (error as { name?: string }).name ?? '';
-  const code = String((error as { code?: string }).code ?? '');
-  const message = error instanceof Error ? error.message : String(error);
-  if (name === 'AbortError' || /abort|timed? ?out/i.test(message) || code === 'ETIMEDOUT') {
-    return 'timeout';
-  }
-  if (
-    /ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|CERT_/i.test(code) ||
-    /fetch failed|network|socket hang up|certificate/i.test(message)
-  ) {
-    return 'network';
-  }
-  return 'unknown';
-}
-
-/** Normalise anything thrown anywhere in this module into the wire error union. */
-export function toOdooError(error: unknown): OdooError {
-  if (error instanceof OdooCallError) return { kind: error.kind, message: error.message };
-  const message = error instanceof Error ? error.message : String(error);
-  const transport = classifyTransport(error);
-  if (transport !== 'unknown') return { kind: transport, message };
-  const fault = classifyOdooFault(message);
-  return { kind: fault === 'odoo' ? 'unknown' : fault, message };
-}
-
-/** Run a service call and hand back the wire result envelope instead of throwing. */
-async function odooResult<T>(run: () => Promise<T>): Promise<OdooResult<T>> {
-  try {
-    return { ok: true, data: await run() };
-  } catch (error) {
-    return { ok: false, error: toOdooError(error) };
-  }
+export async function listProfiles(): Promise<OdooProfileList> {
+  await ensureOdooSecretsMigrated();
+  const settings = await readOdooSettings();
+  return { profiles: settings.profiles, defaultProfileId: settings.defaultProfileId };
 }
 
 /**
- * ~/.odoo-profiles.json is a map of profile name to
- * { url, host, port, db, user, password, odoo_version, description }.
- * That is the file atlas and the odoo CLI read, so we keep it as the exchange
- * format and translate to the app's OdooProfile shape here.
+ * Re-read the vault. Stored metadata is refreshed in place (a server already
+ * listed keeps its id) and every secret is put in the OS keychain, which is the
+ * only way a credential enters this app.
  */
-type FileProfile = {
-  url?: string;
-  host?: string;
-  port?: number | string;
-  db?: string;
-  user?: string;
-  password?: string;
-  odoo_version?: string;
-  description?: string;
+export async function refreshProfilesFromOnePassword(vault?: string): Promise<OdooProfilesRefresh> {
+  await ensureOdooSecretsMigrated();
+  const { source, profiles: incoming, skipped } = await readOdooProfilesFromOnePassword(vault);
+  const settings = await readOdooSettings();
+  const { profiles, idByIncoming } = mergeOnePasswordProfiles(settings.profiles, incoming);
+  const secretsPersisted = await rememberOdooSecrets(
+    incoming.map((profile) => ({
+      profileId: idByIncoming.get(profile.id) ?? profile.id,
+      password: profile.password,
+    }))
+  );
+  const defaultProfileId =
+    settings.defaultProfileId && profiles.some((p) => p.id === settings.defaultProfileId)
+      ? settings.defaultProfileId
+      : (profiles[0]?.id ?? null);
+  await writeOdooSettings({ defaultProfileId, profiles });
+  return { profiles, defaultProfileId, source, skipped, secretsPersisted };
+}
+
+export async function setDefaultProfile(profileId: string): Promise<OdooProfileList> {
+  const settings = await readOdooSettings();
+  if (!settings.profiles.some((profile) => profile.id === profileId)) {
+    throw new OdooCallError('unknown', `No Odoo server with id "${profileId}"`);
+  }
+  await writeOdooSettings({ defaultProfileId: profileId, profiles: settings.profiles });
+  return { profiles: settings.profiles, defaultProfileId: profileId };
+}
+
+/** Forget a server: its metadata and its cached credential both go. 1Password is untouched. */
+export async function removeProfile(profileId: string): Promise<OdooProfileList> {
+  const settings = await readOdooSettings();
+  const profiles = settings.profiles.filter((profile) => profile.id !== profileId);
+  const defaultProfileId =
+    settings.defaultProfileId === profileId ? (profiles[0]?.id ?? null) : settings.defaultProfileId;
+  await writeOdooSettings({ defaultProfileId, profiles });
+  await forgetOdooSecret(profileId);
+  return { profiles, defaultProfileId };
+}
+
+/** The name `atlas` knows this server by, or null. Reads ~/.odoo-profiles.json, never writes it. */
+export async function atlasProfileName(profileId: string): Promise<string | null> {
+  const profile = await findStoredProfile(profileId);
+  if (!profile) return null;
+  return atlasProfileNameFor(profile);
+}
+
+// ---------------------------------------------------------------------------
+// Connecting
+// ---------------------------------------------------------------------------
+
+/** A profile plus the credential resolved for it, for the length of one call. */
+type OdooConnection = {
+  profile: OdooProfileSummary;
+  base: string;
+  password: string;
 };
 
-export const ODOO_PROFILES_PATH = path.join(os.homedir(), '.odoo-profiles.json');
-
-const clip = (value: string | undefined, max: number) =>
-  value && value.trim() ? value.trim().slice(0, max) : undefined;
-
-export function profileIdFromName(name: string): string {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-  return slug || 'profile';
-}
-
-function urlFromFileProfile(entry: FileProfile): string {
-  if (entry.url) return entry.url.replace(/\/+$/, '');
-  if (entry.host) {
-    const port = entry.port ? `:${entry.port}` : '';
-    const scheme = String(entry.port) === '443' ? 'https' : 'http';
-    return `${scheme}://${entry.host}${port}`;
+async function connect(profileId: string): Promise<OdooConnection> {
+  await ensureOdooSecretsMigrated();
+  const profile = await findStoredProfile(profileId);
+  if (!profile) {
+    throw new OdooCallError(
+      'unknown',
+      `No Odoo server with id "${profileId}". Refresh the servers from 1Password on the Odoo settings page.`
+    );
   }
-  return '';
-}
-
-export async function readProfilesFile(): Promise<OdooProfilesFile> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(ODOO_PROFILES_PATH, 'utf8');
-  } catch {
-    return { path: ODOO_PROFILES_PATH, exists: false, profiles: [] };
-  }
-  const parsed = JSON.parse(raw) as Record<string, FileProfile>;
-  const taken = new Set<string>();
-  const profiles: OdooProfile[] = Object.entries(parsed).map(([name, entry]) => {
-    let id = profileIdFromName(name);
-    let suffix = 2;
-    while (taken.has(id)) id = `${profileIdFromName(name)}-${suffix++}`;
-    taken.add(id);
-    return {
-      id,
-      name,
-      url: urlFromFileProfile(entry),
-      db: entry.db ?? '',
-      user: entry.user ?? '',
-      password: entry.password ?? '',
-      description: entry.description,
-      odooVersion: entry.odoo_version ? String(entry.odoo_version) : undefined,
-    };
-  });
-  return { path: ODOO_PROFILES_PATH, exists: true, profiles };
-}
-
-export async function writeProfilesFile(profiles: OdooProfile[]): Promise<{ path: string }> {
-  const out: Record<string, FileProfile> = {};
-  for (const profile of profiles) {
-    const url = new URL(profile.url);
-    out[profile.name] = {
-      url: profile.url,
-      host: url.hostname,
-      port: url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80,
-      db: profile.db,
-      user: profile.user,
-      password: profile.password,
-      odoo_version: profile.odooVersion,
-      description: profile.description,
-    };
-  }
-  await fs.writeFile(ODOO_PROFILES_PATH, JSON.stringify(out, null, 2) + '\n', { mode: 0o600 });
-  return { path: ODOO_PROFILES_PATH };
+  const password = await getOdooSecret(profileId);
+  return { profile, base: profile.url.replace(/\/+$/, ''), password };
 }
 
 /**
@@ -245,15 +190,15 @@ export async function odooRpc(
   }
 }
 
-export async function testConnection(profile: OdooProfile): Promise<OdooConnectionTestResult> {
+export async function testConnection(profileId: string): Promise<OdooConnectionTestResult> {
   const started = Date.now();
   try {
-    const base = profile.url.replace(/\/+$/, '');
+    const { profile, base, password } = await connect(profileId);
     const version = (await odooRpc(base, 'common', 'version', [])) as { server_version?: string };
     const uid = (await odooRpc(base, 'common', 'authenticate', [
       profile.db,
       profile.user,
-      profile.password,
+      password,
       {},
     ])) as number | false;
     if (!uid) {
@@ -266,7 +211,7 @@ export async function testConnection(profile: OdooProfile): Promise<OdooConnecti
     const users = (await odooRpc(base, 'object', 'execute_kw', [
       profile.db,
       uid,
-      profile.password,
+      password,
       'res.users',
       'read',
       [[uid]],
@@ -288,109 +233,10 @@ export async function testConnection(profile: OdooProfile): Promise<OdooConnecti
   }
 }
 
-/**
- * 1Password is the source of truth for Odoo servers: one item per server in the
- * vault, tagged `odoo-profile`, with the same custom fields as
- * ~/.odoo-profiles.json (url, host, port, db, user, password, odoo_version,
- * description). The title is "odoo - <name>". Read through the `op` CLI, which
- * signs in through the 1Password desktop app.
- */
-const OP_CANDIDATES = ['/opt/homebrew/bin/op', '/usr/local/bin/op', 'op'];
+// ---------------------------------------------------------------------------
+// The paired project folder
+// ---------------------------------------------------------------------------
 
-async function op(args: string[]): Promise<string> {
-  let lastError: unknown;
-  for (const bin of OP_CANDIDATES) {
-    try {
-      const { stdout } = await execFileAsync(bin, args, {
-        maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ''}` },
-      });
-      return stdout;
-    } catch (error) {
-      lastError = error;
-      const code = (error as { code?: string }).code;
-      if (code !== 'ENOENT') throw error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('1Password CLI (op) not found');
-}
-
-type OpField = { id?: string; label?: string; value?: string; type?: string };
-type OpItem = { id: string; title: string; category?: string; fields?: OpField[] };
-
-function field(item: OpItem, ...labels: string[]): string {
-  for (const label of labels) {
-    const hit = item.fields?.find((f) => (f.label ?? f.id ?? '').toLowerCase() === label);
-    if (hit?.value) return hit.value;
-  }
-  return '';
-}
-
-export async function readProfilesFromOnePassword(vault = 'AI_MCP'): Promise<OdooProfilesSource> {
-  const list = JSON.parse(
-    await op(['item', 'list', '--vault', vault, '--tags', 'odoo-profile', '--format', 'json'])
-  ) as OpItem[];
-  // One `op item get` per server, six at a time: 21 sequential calls took longer
-  // than the 30 s wire timeout (4 Sep 2026).
-  const items: OpItem[] = [];
-  const queue = [...list];
-  await Promise.all(
-    Array.from({ length: 6 }, async () => {
-      for (let next = queue.shift(); next; next = queue.shift()) {
-        items.push(
-          JSON.parse(
-            await op(['item', 'get', next.id, '--vault', vault, '--format', 'json', '--reveal'])
-          ) as OpItem
-        );
-      }
-    })
-  );
-  items.sort((a, b) => a.title.localeCompare(b.title));
-  const profiles: OdooProfile[] = [];
-  const skipped: string[] = [];
-  const taken = new Set<string>();
-  for (const item of items) {
-    const name = item.title.replace(/^odoo\s*-\s*/i, '').trim() || item.title;
-    const entry: FileProfile = {
-      url: field(item, 'url', 'website'),
-      host: field(item, 'host', 'hostname'),
-      port: field(item, 'port'),
-      db: field(item, 'db', 'database'),
-      user: field(item, 'user', 'username'),
-      password: field(item, 'password', 'credential'),
-      odoo_version: field(item, 'odoo_version'),
-      description: field(item, 'description'),
-    };
-    const url = urlFromFileProfile(entry);
-    if (!url || !entry.db || !entry.user) {
-      skipped.push(`${item.title} (missing url, db or user)`);
-      continue;
-    }
-    let id = profileIdFromName(name);
-    let suffix = 2;
-    while (taken.has(id)) id = `${profileIdFromName(name)}-${suffix++}`;
-    taken.add(id);
-    profiles.push({
-      id,
-      name,
-      url,
-      db: entry.db,
-      user: entry.user,
-      password: entry.password ?? '',
-      description: clip(entry.description, 2000),
-      odooVersion: clip(entry.odoo_version, 40),
-    });
-  }
-  return { source: `1Password vault ${vault}, tag odoo-profile`, profiles, skipped };
-}
-
-/**
- * A project folder for one Odoo server, so a task can start the moment a
- * server is chosen. ~/ITMS CoWorker/odoo-<id>/ with an AGENTS.md that tells
- * the agent which server it is on and to reach it through `atlas odoo
- * --profile <name>`. The password never goes in the folder: atlas reads it
- * from ~/.odoo-profiles.json or 1Password.
- */
 const ODOO_MCP_CANDIDATES = [
   process.env.ITMS_ODOO_MCP_SERVER,
   path.join(os.homedir(), '.local', 'bin', 'itms-odoo-dev'),
@@ -417,7 +263,22 @@ export async function findOdooMcpServer(): Promise<string | null> {
   return null;
 }
 
-export async function prepareProjectFolder(profile: OdooProfile): Promise<OdooProjectFolder> {
+/**
+ * A project folder for one Odoo server, so a task can start the moment a
+ * server is chosen. ~/ITMS CoWorker/odoo-<id>/ with an AGENTS.md that tells the
+ * agent which server it is on. The credential never goes in the folder: the MCP
+ * launcher and atlas read it from their own ~/.odoo-profiles.json.
+ *
+ * The profile name written into the folder is the name atlas knows, matched on
+ * url and database - this app's id ("itms-19") is not an atlas profile name.
+ */
+export async function prepareProjectFolder(profileId: string): Promise<OdooProjectFolder> {
+  await ensureOdooSecretsMigrated();
+  const profile = await findStoredProfile(profileId);
+  if (!profile) {
+    throw new OdooCallError('unknown', `No Odoo server with id "${profileId}"`);
+  }
+  const atlasName = await atlasProfileNameFor(profile);
   const root = path.join(os.homedir(), 'ITMS CoWorker');
   const dir = path.join(root, `odoo-${profile.id}`);
   let created = false;
@@ -452,6 +313,19 @@ credential itself:`
 No Odoo MCP server is installed on this machine, so atlas is the way in. It
 holds the credential itself:`;
 
+  const atlasSection = atlasName
+    ? `    atlas odoo --profile ${atlasName} models --json
+    atlas odoo --profile ${atlasName} fields res.partner --json
+    atlas odoo --profile ${atlasName} count res.partner --domain '[["is_company","=",true]]'
+    atlas odoo --profile ${atlasName} read res.partner 1 2 --fields name,email --json
+    atlas odoo --profile ${atlasName} export res.partner --fields name,email --limit 50
+
+\`atlas odoo --help\` lists every verb for this family; \`atlas commands --json\` lists
+the whole tree.`
+    : `~/.odoo-profiles.json has no entry for this server, so atlas has no profile name
+for it. Run \`atlas odoo profiles\` and pick the one for ${profile.url} (database
+${profile.db}); "${profile.id}" is this app's own id, not an atlas profile name.`;
+
   const agents = `# Odoo server: ${profile.name}
 
 This project is paired with one Odoo server. Every question or change is about this
@@ -464,14 +338,7 @@ server unless the task says otherwise.
 ${profile.odooVersion ? `- Odoo version: ${profile.odooVersion}\n` : ''}${profile.description ? `- Notes: ${profile.description}\n` : ''}
 ${mcpSection}
 
-    atlas odoo --profile ${profile.name} models --json
-    atlas odoo --profile ${profile.name} fields res.partner --json
-    atlas odoo --profile ${profile.name} count res.partner --domain '[["is_company","=",true]]'
-    atlas odoo --profile ${profile.name} read res.partner 1 2 --fields name,email --json
-    atlas odoo --profile ${profile.name} export res.partner --fields name,email --limit 50
-
-\`atlas odoo --help\` lists every verb for this family; \`atlas commands --json\` lists
-the whole tree.
+${atlasSection}
 
 ## Read before you write
 
@@ -481,25 +348,24 @@ These methods are reads and need no permission: \`search\`, \`search_read\`,
 Everything else is a write - \`create\`, \`write\`, \`unlink\`, \`message_post\`, button
 methods, module install and upgrade. Show the exact call and the number of affected
 records to the person and wait for them to agree before running it.
-
-The environment variable ODOO_PROFILE=${profile.name} names this server too.
-
+${atlasName ? `\nThe environment variable ODOO_PROFILE=${atlasName} names this server too.\n` : ''}
 Never print or copy the password or API key. It is not in this folder on purpose.
 `;
   await fs.writeFile(path.join(dir, 'AGENTS.md'), agents);
   await fs.writeFile(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
   await fs.writeFile(
     path.join(dir, '.env'),
-    `ODOO_PROFILE=${profile.name}\nODOO_URL=${profile.url}\nODOO_DB=${profile.db}\n`
+    `${atlasName ? `ODOO_PROFILE=${atlasName}\n` : ''}ODOO_URL=${profile.url}\nODOO_DB=${profile.db}\n`
   );
-  if (mcpServer) {
+  if (mcpServer && atlasName) {
     // The launcher walks up from its working directory looking for this file and
     // resolves the profile name against ~/.odoo-profiles.json, which is where the
-    // password stays.
+    // launcher's own copy of the password stays. Without a name it knows, there
+    // is nothing to point it at.
     await fs.mkdir(path.join(dir, '.proj'), { recursive: true });
     await fs.writeFile(
       path.join(dir, '.proj', 'config.yaml'),
-      `# Read by the itms-odoo-dev MCP launcher.\nodoo:\n  profile: ${profile.name}\n`
+      `# Read by the itms-odoo-dev MCP launcher.\nodoo:\n  profile: ${atlasName}\n`
     );
     const mcpConfig = {
       mcpServers: {
@@ -510,7 +376,7 @@ Never print or copy the password or API key. It is not in this folder on purpose
           // No password here on purpose: the launcher adds ODOO_PASSWORD from
           // ~/.odoo-profiles.json using the profile named in .proj/config.yaml.
           env: {
-            ODOO_PROFILE: profile.name,
+            ODOO_PROFILE: atlasName,
             ODOO_URL: profile.url,
             ODOO_DB: profile.db,
             ODOO_USERNAME: profile.user,
@@ -541,7 +407,12 @@ Never print or copy the password or API key. It is not in this folder on purpose
       { cwd: dir }
     );
   }
-  return { path: dir, created, name: `Odoo · ${profile.name}`, mcpServer };
+  return {
+    path: dir,
+    created,
+    name: `Odoo · ${profile.name}`,
+    mcpServer: mcpServer && atlasName ? mcpServer : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -555,34 +426,32 @@ const uidCache = new Map<string, number>();
  * replaced by a truncated SHA-256 so a rotated API key still misses the cache
  * but the plaintext is never a map key.
  */
-function uidCacheKey(profile: OdooProfile): string {
-  const base = profile.url.replace(/\/+$/, '');
-  const fingerprint = createHash('sha256').update(profile.password).digest('hex').slice(0, 32);
-  return `${base}|${profile.db}|${profile.user}|${fingerprint}`;
+function uidCacheKey(connection: OdooConnection): string {
+  const fingerprint = createHash('sha256').update(connection.password).digest('hex').slice(0, 32);
+  return `${connection.base}|${connection.profile.db}|${connection.profile.user}|${fingerprint}`;
 }
 
-/** Forget the cached uid for one profile, or for every profile when none is given. */
-export function clearUidCache(profile?: OdooProfile): void {
-  if (!profile) uidCache.clear();
-  else uidCache.delete(uidCacheKey(profile));
+/** Forget the cached uid for one connection, or for every profile when none is given. */
+export function clearUidCache(connection?: OdooConnection): void {
+  if (!connection) uidCache.clear();
+  else uidCache.delete(uidCacheKey(connection));
 }
 
-/** Authenticate once per profile (url + db + user + password) and cache the uid. */
-async function odooUid(profile: OdooProfile): Promise<number> {
-  const base = profile.url.replace(/\/+$/, '');
-  const key = uidCacheKey(profile);
+/** Authenticate once per credential (url + db + user + password) and cache the uid. */
+async function odooUid(connection: OdooConnection): Promise<number> {
+  const key = uidCacheKey(connection);
   const cached = uidCache.get(key);
   if (cached) return cached;
-  const uid = (await odooRpc(base, 'common', 'authenticate', [
-    profile.db,
-    profile.user,
-    profile.password,
+  const uid = (await odooRpc(connection.base, 'common', 'authenticate', [
+    connection.profile.db,
+    connection.profile.user,
+    connection.password,
     {},
   ])) as number | false;
   if (!uid) {
     throw new OdooCallError(
       'auth',
-      `Login refused for ${profile.user} on database ${profile.db} (password or API key)`
+      `Login refused for ${connection.profile.user} on database ${connection.profile.db} (password or API key)`
     );
   }
   uidCache.set(key, uid);
@@ -590,18 +459,17 @@ async function odooUid(profile: OdooProfile): Promise<number> {
 }
 
 async function executeKwOnce(
-  profile: OdooProfile,
+  connection: OdooConnection,
   model: string,
   method: string,
   args: unknown[],
   kwargs: Record<string, unknown>
 ): Promise<unknown> {
-  const base = profile.url.replace(/\/+$/, '');
-  const uid = await odooUid(profile);
-  return odooRpc(base, 'object', 'execute_kw', [
-    profile.db,
+  const uid = await odooUid(connection);
+  return odooRpc(connection.base, 'object', 'execute_kw', [
+    connection.profile.db,
     uid,
-    profile.password,
+    connection.password,
     model,
     method,
     args,
@@ -610,27 +478,27 @@ async function executeKwOnce(
 }
 
 /**
- * object.execute_kw for any model and method.
+ * object.execute_kw for any model and method, on an already-resolved connection.
  *
  * A cached uid outlives the session it was minted in, so an Odoo restart or a
  * rotated key shows up here as an auth failure on a call that used to work.
  * When that happens the cached uid is dropped and the call is tried once more
  * from a fresh authenticate; a second failure is surfaced as a typed auth error.
  */
-export async function executeKw(
-  profile: OdooProfile,
+async function executeKwOn(
+  connection: OdooConnection,
   model: string,
   method: string,
   args: unknown[],
   kwargs: Record<string, unknown> = {}
 ): Promise<unknown> {
   try {
-    return await executeKwOnce(profile, model, method, args, kwargs);
+    return await executeKwOnce(connection, model, method, args, kwargs);
   } catch (error) {
     if (toOdooError(error).kind !== 'auth') throw error;
-    clearUidCache(profile);
+    clearUidCache(connection);
     try {
-      return await executeKwOnce(profile, model, method, args, kwargs);
+      return await executeKwOnce(connection, model, method, args, kwargs);
     } catch (retryError) {
       const normalised = toOdooError(retryError);
       throw new OdooCallError(normalised.kind, normalised.message);
@@ -638,12 +506,23 @@ export async function executeKw(
   }
 }
 
+/** object.execute_kw for any model and method, by profile id. */
+export async function executeKw(
+  profileId: string,
+  model: string,
+  method: string,
+  args: unknown[],
+  kwargs: Record<string, unknown> = {}
+): Promise<unknown> {
+  return executeKwOn(await connect(profileId), model, method, args, kwargs);
+}
+
 // ---------------------------------------------------------------------------
 // Convenience reads, on the wire for the renderer and for agent tooling
 // ---------------------------------------------------------------------------
 
 export type SearchReadRequest = {
-  profile: OdooProfile;
+  profileId: string;
   model: string;
   domain?: unknown[];
   fields?: string[];
@@ -661,7 +540,7 @@ export async function searchRead(req: SearchReadRequest): Promise<OdooResult<Odo
     if (req.order) kwargs.order = req.order;
     if (req.offset) kwargs.offset = req.offset;
     const rows = (await executeKw(
-      req.profile,
+      req.profileId,
       req.model,
       'search_read',
       [req.domain ?? []],
@@ -672,7 +551,7 @@ export async function searchRead(req: SearchReadRequest): Promise<OdooResult<Odo
 }
 
 export async function readRecords(req: {
-  profile: OdooProfile;
+  profileId: string;
   model: string;
   ids: number[];
   fields?: string[];
@@ -681,23 +560,23 @@ export async function readRecords(req: {
     if (req.ids.length === 0) return [];
     const kwargs: Record<string, unknown> = {};
     if (req.fields?.length) kwargs.fields = req.fields;
-    return (await executeKw(req.profile, req.model, 'read', [req.ids], kwargs)) as OdooRecord[];
+    return (await executeKw(req.profileId, req.model, 'read', [req.ids], kwargs)) as OdooRecord[];
   });
 }
 
 export async function searchCount(req: {
-  profile: OdooProfile;
+  profileId: string;
   model: string;
   domain?: unknown[];
 }): Promise<OdooResult<number>> {
   return odooResult(
     async () =>
-      (await executeKw(req.profile, req.model, 'search_count', [req.domain ?? []])) as number
+      (await executeKw(req.profileId, req.model, 'search_count', [req.domain ?? []])) as number
   );
 }
 
 export async function fieldsGet(req: {
-  profile: OdooProfile;
+  profileId: string;
   model: string;
   attributes?: string[];
 }): Promise<OdooResult<Record<string, OdooFieldInfo>>> {
@@ -712,7 +591,7 @@ export async function fieldsGet(req: {
       'selection',
       'help',
     ];
-    return (await executeKw(req.profile, req.model, 'fields_get', [[]], {
+    return (await executeKw(req.profileId, req.model, 'fields_get', [[]], {
       attributes,
     })) as Record<string, OdooFieldInfo>;
   });
@@ -720,13 +599,13 @@ export async function fieldsGet(req: {
 
 /** Every installed model, or those whose technical or display name contains `filter`. */
 export async function listModels(req: {
-  profile: OdooProfile;
+  profileId: string;
   filter?: string;
 }): Promise<OdooResult<OdooModelSummary[]>> {
   return odooResult(async () => {
     const needle = req.filter?.trim();
     const domain = needle ? ['|', ['model', 'ilike', needle], ['name', 'ilike', needle]] : [];
-    const rows = (await executeKw(req.profile, 'ir.model', 'search_read', [domain], {
+    const rows = (await executeKw(req.profileId, 'ir.model', 'search_read', [domain], {
       fields: ['model', 'name'],
       order: 'model',
       limit: ODOO_MAX_LIMIT,
@@ -744,7 +623,7 @@ export async function listModels(req: {
  * enforced here rather than only documented.
  */
 export async function callMethod(req: {
-  profile: OdooProfile;
+  profileId: string;
   model: string;
   method: string;
   args: unknown[];
@@ -761,7 +640,7 @@ export async function callMethod(req: {
     };
   }
   return odooResult(() =>
-    executeKw(req.profile, req.model, req.method, req.args, req.kwargs ?? {})
+    executeKw(req.profileId, req.model, req.method, req.args, req.kwargs ?? {})
   );
 }
 
@@ -789,12 +668,13 @@ function htmlToText(html: string | false): string {
 const OPEN_DOMAIN = [['stage_id.fold', '=', false]];
 
 /** Every helpdesk team with its open-ticket count (stages not folded). */
-export async function helpdeskTeams(profile: OdooProfile): Promise<HelpdeskTeam[]> {
-  const teams = (await executeKw(profile, 'helpdesk.team', 'search_read', [[]], {
+export async function helpdeskTeams(profileId: string): Promise<HelpdeskTeam[]> {
+  const connection = await connect(profileId);
+  const teams = (await executeKwOn(connection, 'helpdesk.team', 'search_read', [[]], {
     fields: ['id', 'name', 'description'],
     order: 'sequence, name',
   })) as Array<{ id: number; name: string; description: string | false }>;
-  const groups = (await executeKw(profile, 'helpdesk.ticket', 'read_group', [
+  const groups = (await executeKwOn(connection, 'helpdesk.ticket', 'read_group', [
     OPEN_DOMAIN,
     ['team_id'],
     ['team_id'],
@@ -811,11 +691,11 @@ export async function helpdeskTeams(profile: OdooProfile): Promise<HelpdeskTeam[
 
 /** Open tickets, newest activity first, optionally for one team. */
 export async function helpdeskTickets(
-  profile: OdooProfile,
+  profileId: string,
   opts: { teamId?: number; limit?: number } = {}
 ): Promise<HelpdeskTicket[]> {
   const domain = opts.teamId ? [...OPEN_DOMAIN, ['team_id', '=', opts.teamId]] : OPEN_DOMAIN;
-  const rows = (await executeKw(profile, 'helpdesk.ticket', 'search_read', [domain], {
+  const rows = (await executeKw(profileId, 'helpdesk.ticket', 'search_read', [domain], {
     fields: [
       'id',
       'ticket_ref',
@@ -856,11 +736,11 @@ export async function helpdeskTickets(
 
 /** The chatter of one ticket, oldest first: emails, comments and internal notes, not system tracking. */
 export async function helpdeskMessages(
-  profile: OdooProfile,
+  profileId: string,
   ticketId: number
 ): Promise<HelpdeskMessage[]> {
   const rows = (await executeKw(
-    profile,
+    profileId,
     'mail.message',
     'search_read',
     [
@@ -905,10 +785,11 @@ export async function helpdeskMessages(
 
 /** What else the practice knows about the ticket's customer: the contact and their other tickets. */
 export async function helpdeskRelated(
-  profile: OdooProfile,
+  profileId: string,
   ticketId: number
 ): Promise<HelpdeskRelated> {
-  const [ticket] = (await executeKw(profile, 'helpdesk.ticket', 'read', [[ticketId]], {
+  const connection = await connect(profileId);
+  const [ticket] = (await executeKwOn(connection, 'helpdesk.ticket', 'read', [[ticketId]], {
     fields: ['partner_id', 'commercial_partner_id', 'partner_email', 'partner_phone'],
   })) as Array<Record<string, unknown>>;
   const partnerId = m2oId((ticket?.partner_id as Many2one) ?? false);
@@ -923,8 +804,8 @@ export async function helpdeskRelated(
       openTickets: 0,
     };
   }
-  const tickets = (await executeKw(
-    profile,
+  const tickets = (await executeKwOn(
+    connection,
     'helpdesk.ticket',
     'search_read',
     [
@@ -939,7 +820,7 @@ export async function helpdeskRelated(
       limit: 15,
     }
   )) as Array<Record<string, unknown>>;
-  const openCount = (await executeKw(profile, 'helpdesk.ticket', 'search_count', [
+  const openCount = (await executeKwOn(connection, 'helpdesk.ticket', 'search_count', [
     [
       ['id', '!=', ticketId],
       ['partner_id', 'child_of', companyId],
@@ -965,7 +846,7 @@ export async function helpdeskRelated(
 
 /** Add an internal note to a ticket. The only write the app makes, and it is a note, not a change. */
 export async function helpdeskPostNote(
-  profile: OdooProfile,
+  profileId: string,
   ticketId: number,
   body: string
 ): Promise<{ messageId: number }> {
@@ -973,7 +854,7 @@ export async function helpdeskPostNote(
     .split('\n')
     .map((line) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
     .join('<br/>');
-  const id = (await executeKw(profile, 'helpdesk.ticket', 'message_post', [[ticketId]], {
+  const id = (await executeKw(profileId, 'helpdesk.ticket', 'message_post', [[ticketId]], {
     body: `<p>${html}</p>`,
     message_type: 'comment',
     subtype_xmlid: 'mail.mt_note',

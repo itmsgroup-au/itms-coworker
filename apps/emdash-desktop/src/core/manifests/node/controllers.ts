@@ -234,7 +234,7 @@ export const desktopNodeControllers = {
     },
   },
   odoo: {
-    create: () => createOdooWireController(),
+    create: ({ appSettings, db }) => createOdooWireController({ appSettings, db }),
   },
   promptLibrary: {
     create: ({ promptLibrary }) => createPromptLibraryWireController(promptLibrary),

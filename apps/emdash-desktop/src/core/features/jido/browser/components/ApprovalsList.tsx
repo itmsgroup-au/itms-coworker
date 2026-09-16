@@ -9,7 +9,7 @@ import {
   useJidoApprovals,
   type JidoApproval,
 } from '@core/features/jido/api/browser/use-jido';
-import type { OdooProfile } from '@core/primitives/app-settings/api';
+import type { OdooProfileSummary } from '@core/features/odoo/api';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { ErrorLine, formatPayload, formatWhen, PageHeader } from './shared';
 
@@ -18,11 +18,11 @@ export function ApprovalsList({
   selectedApprovalId,
   onSelect,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   selectedApprovalId: number | null;
   onSelect: (approvalId: number | null) => void;
 }) {
-  const approvals = useJidoApprovals(profile, { proceduresOnly: false });
+  const approvals = useJidoApprovals(profile.id, { proceduresOnly: false });
   const rows = approvals.data ?? [];
   const selected = rows.find((row) => row.id === selectedApprovalId) ?? null;
 
@@ -129,7 +129,7 @@ function ApprovalDetail({
   approval,
   onClose,
 }: {
-  profile: OdooProfile;
+  profile: OdooProfileSummary;
   approval: JidoApproval;
   onClose: () => void;
 }) {
@@ -145,10 +145,10 @@ function ApprovalDetail({
     setBusy(true);
     try {
       if (kind === 'approve') {
-        await approveJidoAction(profile, approval.id);
+        await approveJidoAction(profile.id, approval.id);
         toast(`Approved: ${approval.name}`);
       } else {
-        await rejectJidoAction(profile, approval.id, reason);
+        await rejectJidoAction(profile.id, approval.id, reason);
         toast(`Rejected: ${approval.name}`);
       }
       setPending(null);
