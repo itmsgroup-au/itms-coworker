@@ -2,6 +2,7 @@ import type { GitBranchRef } from '@emdash/core/runtimes/git/api';
 import { useMemo, useState } from 'react';
 import { getProjectSettingsStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
+import { developerSurfacesSnapshot } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 import type { LinkedIssue } from '@core/primitives/linked-issues/api';
 import { buildWorkspaceConfigFromPreset } from '@core/primitives/workspaces/api';
 import { compileWorktreeGitPlan } from '@core/primitives/workspaces/api';
@@ -21,7 +22,6 @@ import {
 } from '../../../browser/create-task-modal/use-branch-selection';
 import { type ProjectWorkspaceOption } from './project-workspace-options';
 import { useProjectWorkspaceOptions } from './use-project-workspace-options';
-import { developerSurfacesSnapshot } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 
 // ---------------------------------------------------------------------------
 // Types
