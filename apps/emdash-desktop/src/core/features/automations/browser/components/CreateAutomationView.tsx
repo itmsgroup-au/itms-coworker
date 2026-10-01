@@ -43,6 +43,7 @@ export const CreateAutomationView = observer(function CreateAutomationView({
     effectiveProjectId,
     provider,
     canSave,
+    saveBlocker,
     triggerConfig,
     applyTemplate,
     buildTaskConfig,
@@ -154,6 +155,14 @@ export const CreateAutomationView = observer(function CreateAutomationView({
         </Collapsible.Panel>
       </Collapsible.Root>
       <Sheet.Footer className="flex flex-row items-center justify-end gap-2">
+        {!isPending && (saveBlocker || (availability.data && !runtimeAvailable)) && (
+          <span className="mr-auto text-xs text-foreground-muted">
+            {saveBlocker ??
+              (availability.data && 'reason' in availability.data
+                ? availability.data.reason
+                : 'The project cannot run automations right now.')}
+          </span>
+        )}
         <Button variant="secondary" size="sm" onClick={onClose}>
           Cancel
         </Button>

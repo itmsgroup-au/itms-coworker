@@ -184,14 +184,23 @@ export function useAutomationFormState(
     }
   }, [setUseChatUi, shouldForceChatUi, useChatUi]);
 
-  const canSave =
-    initialConversation.settingsReady &&
-    name.trim().length > 0 &&
-    prompt.trim().length > 0 &&
-    !!provider &&
-    providerSupportsAutomationPrompt &&
-    !!effectiveProjectId &&
-    workspaceConfig.isValid;
+  // Why Save is off, in the order a person would fix it; empty when it is on.
+  const saveBlocker = !effectiveProjectId
+    ? 'Choose a project.'
+    : !name.trim()
+      ? 'Give it a name.'
+      : !provider
+        ? 'Choose an agent.'
+        : !providerSupportsAutomationPrompt
+          ? 'This agent cannot take a scheduled prompt.'
+          : !initialConversation.settingsReady
+            ? 'Loading the agent settings…'
+            : !prompt.trim()
+              ? 'Write the prompt.'
+              : !workspaceConfig.isValid
+                ? 'Workspace Settings is incomplete: pick a branch, or a workspace that is free.'
+                : null;
+  const canSave = saveBlocker === null;
 
   function buildTaskConfig(targetProjectId: string): StoredAutomationTaskConfig | null {
     const effectiveRepoWsId =
@@ -270,6 +279,7 @@ export function useAutomationFormState(
     provider,
     model,
     canSave,
+    saveBlocker,
     triggerConfig,
     applyTemplate,
     buildTaskConfig,
