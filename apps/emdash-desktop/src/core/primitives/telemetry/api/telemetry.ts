@@ -22,7 +22,8 @@ export type FocusView =
   | 'settings'
   | 'automations'
   | 'helpdesk'
-  | 'jido';
+  | 'jido'
+  | 'approvals';
 export type FocusMainPanel = 'agents' | 'editor' | 'diff' | 'browser' | 'terminal';
 export type FocusedRegion = 'main' | 'bottom';
 
@@ -74,6 +75,7 @@ export type TelemetryEventProperties = {
   automations_viewed: { from_view: FocusView | null };
   helpdesk_viewed: { from_view: FocusView | null };
   jido_viewed: { from_view: FocusView | null };
+  approvals_viewed: { from_view: FocusView | null };
 
   automation_created: {
     enabled: boolean;

@@ -151,8 +151,15 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
   never starts `GitRepositoryStore` or `TaskPrSyncCoordinator`. Off restores every one of
   them. The switch is Settings → Interface → Mode.
 
-- **Sidebar.** The "Work" group leads with Tickets and Procedures; Projects is collapsed by
-  default below them.
+- **Approvals.** View id `approvals`, under `apps/emdash-desktop/src/core/features/approvals/`.
+  One inbox for every permission an agent is waiting on, across all ACP conversations.
+  `api/browser/approvals-source.ts` watches each conversation's `conversations.acp.session`
+  state (reading it never wakes a suspended agent) and answers with `acp.resolvePermission`,
+  the same call the task chat makes. The page also links to the Odoo procedure approvals in
+  Procedures. Part of beadwork epic `itms-cow-iw9` (the openworker-style simple mode).
+
+- **Sidebar.** The "Work" group leads with Tickets, Approvals and Procedures; Projects is
+  collapsed by default below them.
 
 ## Adding another Settings section (the recipe)
 

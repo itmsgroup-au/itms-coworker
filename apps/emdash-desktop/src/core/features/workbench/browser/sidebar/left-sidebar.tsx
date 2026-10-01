@@ -1,6 +1,7 @@
 import { MicroLabel } from '@emdash/ui/react/primitives';
 import {
   ChevronRight,
+  CircleCheck,
   Clock,
   FolderInput,
   MessageSquareShare,
@@ -10,6 +11,8 @@ import {
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
+import { ApprovalsPendingCount } from '@core/features/approvals/contributions/browser/pending-count';
+import { approvalsViewDef } from '@core/features/approvals/contributions/views';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { HelpdeskOpenCount } from '@core/features/helpdesk/contributions/browser/open-count';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
@@ -90,6 +93,18 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                     <span className="truncate">Tickets</span>
                   </span>
                   <HelpdeskOpenCount />
+                </SidebarMenuButton>
+                <SidebarMenuButton
+                  isActive={isCurrentView(currentView, 'approvals')}
+                  onClick={() => navigate(approvalsViewDef({}))}
+                  aria-label="Approvals"
+                  className="w-full justify-between"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <CircleCheck className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                    <span className="truncate">Approvals</span>
+                  </span>
+                  <ApprovalsPendingCount />
                 </SidebarMenuButton>
                 <SidebarMenuButton
                   isActive={isCurrentView(currentView, 'jido')}

@@ -1,3 +1,4 @@
+import { approvalsViewDef } from '@core/features/approvals/contributions/views';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import { jidoViewDef } from '@core/features/jido/contributions/views';
@@ -15,6 +16,7 @@ export const viewCatalog = defineViewCatalog([
   settingsViewDef,
   helpdeskViewDef,
   jidoViewDef,
+  approvalsViewDef,
 ] as const);
 
 export type ViewId = (typeof viewCatalog.defs)[number]['id'];
