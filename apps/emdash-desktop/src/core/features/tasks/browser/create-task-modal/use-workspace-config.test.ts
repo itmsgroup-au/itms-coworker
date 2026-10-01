@@ -25,6 +25,17 @@ const repositoryStoreMock = vi.hoisted(() => ({
   } | null,
 }));
 
+// Most cases exercise worktree presets, which only exist in developer mode.
+const developerModeMock = vi.hoisted(() => ({ showWorktrees: true }));
+
+vi.mock('@core/features/workbench/api/browser/mode-developer-surfaces', () => ({
+  developerSurfacesSnapshot: () => ({
+    showSourceControl: developerModeMock.showWorktrees,
+    showPullRequests: developerModeMock.showWorktrees,
+    showWorktrees: developerModeMock.showWorktrees,
+  }),
+}));
+
 vi.mock('@core/features/source-control/api/browser/stores/source-control-selectors', () => ({
   getGitRepositoryStore: () => repositoryStoreMock.current,
 }));
@@ -130,6 +141,7 @@ describe('useWorkspaceConfig branch selection', () => {
 
   beforeEach(() => {
     latestState = undefined;
+    developerModeMock.showWorktrees = true;
     branchNameMock.current = 'generated-task-branch';
     workspaceOptionsMock.current = [];
     projectConfigMock.preservePatterns = ['.env'];
@@ -164,6 +176,15 @@ describe('useWorkspaceConfig branch selection', () => {
       root.render(React.createElement(Probe, { initial, ...options }));
     });
   }
+
+  it('runs in the project folder in non-developer mode, where branches are never loaded', async () => {
+    developerModeMock.showWorktrees = false;
+    await renderProbe({ mode: 'new-worktree', presetId: 'new-worktree' });
+
+    expect(latestState?.mode).toBe('existing');
+    expect(latestState?.presetId).toBe('repo-root');
+    expect(latestState?.isValid).toBe(true);
+  });
 
   it('uses the current branch when checkout mode is selected without an explicit branch', async () => {
     await renderProbe(undefined);

@@ -21,6 +21,7 @@ import {
 } from '../../../browser/create-task-modal/use-branch-selection';
 import { type ProjectWorkspaceOption } from './project-workspace-options';
 import { useProjectWorkspaceOptions } from './use-project-workspace-options';
+import { developerSurfacesSnapshot } from '@core/features/workbench/api/browser/mode-developer-surfaces';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +170,10 @@ export function useWorkspaceConfig(opts: {
   } = opts;
 
   const hasPR = !!pr;
-  const worktreesDisabled = isUnborn || !hasRepository;
+  // Non-developer mode never loads the branch list, so a new worktree could
+  // never be valid there; tasks and automations run in the project folder.
+  const worktreesDisabled =
+    isUnborn || !hasRepository || !developerSurfacesSnapshot().showWorktrees;
   const initialMode = defaultMode(worktreesDisabled, initial?.mode);
   const [mode, setModeRaw] = useState<WorkspaceMode>(initialMode);
   const [presetId, setPresetIdRaw] = useState<WorkspacePresetId>(() =>
