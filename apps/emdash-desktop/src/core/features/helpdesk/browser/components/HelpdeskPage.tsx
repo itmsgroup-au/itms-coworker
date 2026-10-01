@@ -1,10 +1,5 @@
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
-import {
-  Button,
-  Resizable,
-  Select,
-  useResizableDefaultLayout,
-} from '@emdash/ui/react/primitives';
+import { Button, Resizable, Select, useResizableDefaultLayout } from '@emdash/ui/react/primitives';
 import { ChevronDown, ChevronRight, Headset, Loader2, RefreshCw, Star } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
@@ -250,6 +245,9 @@ const TicketList = observer(function TicketList({
   const groups = useMemo(() => groupTickets(tickets.data ?? []), [tickets.data]);
   const teamName = teams.data?.find((t) => t.id === teamId)?.name;
   const selectedTicket = tickets.data?.find((t) => t.id === selectedTicketId) ?? null;
+  // A ticket open on the right leaves the list too narrow for seven columns.
+  const compact = selectedTicket !== null;
+  const columns = compact ? 2 : 7;
 
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
@@ -320,17 +318,24 @@ const TicketList = observer(function TicketList({
         }
       >
         <div className="h-full min-h-0 min-w-0 overflow-auto rounded-lg border border-border">
-          <table className="w-full min-w-[760px] border-collapse text-sm">
+          <table className={cn('w-full border-collapse text-sm', !compact && 'min-w-[760px]')}>
             <thead>
-              <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
-                <th className="w-20 px-3 py-2">Priority</th>
-                <th className="w-32 px-3 py-2">Stage</th>
-                <th className="w-56 px-3 py-2">Customer</th>
-                <th className="w-36 px-3 py-2">Assigned to</th>
-                <th className="px-3 py-2">Name</th>
-                <th className="w-64 px-3 py-2">Agent</th>
-                <th className="w-24 px-3 py-2 text-right">SLA</th>
-              </tr>
+              {compact ? (
+                <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
+                  <th className="px-3 py-2">Ticket</th>
+                  <th className="w-24 px-3 py-2 text-right">Agent</th>
+                </tr>
+              ) : (
+                <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
+                  <th className="w-20 px-3 py-2">Priority</th>
+                  <th className="w-32 px-3 py-2">Stage</th>
+                  <th className="w-56 px-3 py-2">Customer</th>
+                  <th className="w-36 px-3 py-2">Assigned to</th>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="w-64 px-3 py-2">Agent</th>
+                  <th className="w-24 px-3 py-2 text-right">SLA</th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {groups.map((team) => {
@@ -339,6 +344,7 @@ const TicketList = observer(function TicketList({
                 return (
                   <GroupRows key={teamKey}>
                     <GroupHeader
+                      colSpan={columns}
                       depth={0}
                       label={`${team.label} (${team.count})`}
                       open={teamOpen}
@@ -351,6 +357,7 @@ const TicketList = observer(function TicketList({
                         return (
                           <GroupRows key={whoKey}>
                             <GroupHeader
+                              colSpan={columns}
                               depth={1}
                               label={`${who.label} (${who.count})`}
                               open={whoOpen}
@@ -362,22 +369,39 @@ const TicketList = observer(function TicketList({
                                   assignments[assignmentKey(profile.id, ticket.id)] ?? null;
                                 return (
                                   <TicketRowGroup key={ticket.id}>
-                                    <TicketRow
-                                      ticket={ticket}
-                                      assignment={assignment}
-                                      selected={ticket.id === selectedTicketId}
-                                      agentState={launcher.stateFor(ticket.id)}
-                                      providerLabel={launcher.defaultProviderLabel}
-                                      onSelect={() =>
-                                        onSelect(ticket.id === selectedTicketId ? null : ticket.id)
-                                      }
-                                      onStart={() => void launcher.start(ticket)}
-                                      onOptions={() =>
-                                        setAssigning((id) => (id === ticket.id ? null : ticket.id))
-                                      }
-                                      onUnassign={() => clearAssignment(ticket.id)}
-                                    />
-                                    {assigning === ticket.id && (
+                                    {compact ? (
+                                      <CompactTicketRow
+                                        ticket={ticket}
+                                        assignment={assignment}
+                                        selected={ticket.id === selectedTicketId}
+                                        onSelect={() =>
+                                          onSelect(
+                                            ticket.id === selectedTicketId ? null : ticket.id
+                                          )
+                                        }
+                                      />
+                                    ) : (
+                                      <TicketRow
+                                        ticket={ticket}
+                                        assignment={assignment}
+                                        selected={ticket.id === selectedTicketId}
+                                        agentState={launcher.stateFor(ticket.id)}
+                                        providerLabel={launcher.defaultProviderLabel}
+                                        onSelect={() =>
+                                          onSelect(
+                                            ticket.id === selectedTicketId ? null : ticket.id
+                                          )
+                                        }
+                                        onStart={() => void launcher.start(ticket)}
+                                        onOptions={() =>
+                                          setAssigning((id) =>
+                                            id === ticket.id ? null : ticket.id
+                                          )
+                                        }
+                                        onUnassign={() => clearAssignment(ticket.id)}
+                                      />
+                                    )}
+                                    {!compact && assigning === ticket.id && (
                                       <AssignRow
                                         profile={profile}
                                         ticket={ticket}
@@ -397,14 +421,14 @@ const TicketList = observer(function TicketList({
               })}
               {tickets.isLoading && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-4 text-foreground-muted">
+                  <td colSpan={columns} className="px-3 py-4 text-foreground-muted">
                     Loading tickets…
                   </td>
                 </tr>
               )}
               {!tickets.isLoading && groups.length === 0 && !tickets.error && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-4 text-foreground-muted">
+                  <td colSpan={columns} className="px-3 py-4 text-foreground-muted">
                     No open tickets.
                   </td>
                 </tr>
@@ -460,11 +484,13 @@ function TicketRowGroup({ children }: { children: React.ReactNode }) {
 }
 
 function GroupHeader({
+  colSpan,
   depth,
   label,
   open,
   onToggle,
 }: {
+  colSpan: number;
   depth: number;
   label: string;
   open: boolean;
@@ -476,7 +502,7 @@ function GroupHeader({
       className="cursor-pointer border-b border-border bg-background-secondary/60 hover:bg-background-secondary"
       onClick={onToggle}
     >
-      <td colSpan={7} className="px-3 py-1.5" style={{ paddingLeft: 12 + depth * 20 }}>
+      <td colSpan={colSpan} className="px-3 py-1.5" style={{ paddingLeft: 12 + depth * 20 }}>
         <span className="inline-flex items-center gap-1 text-xs font-medium">
           <Icon className="size-3.5 text-foreground-muted" />
           {label}
@@ -552,6 +578,75 @@ const TicketRow = observer(function TicketRow({
       </td>
       <td className={cn('px-3 py-2 text-right', slaLate && 'text-red-500')}>{sla}</td>
     </tr>
+  );
+});
+
+/**
+ * One ticket in two short lines, used while the detail pane is open and the
+ * list is too narrow for seven columns. Starting or changing the agent happens
+ * in the detail pane's Agent tab.
+ */
+const CompactTicketRow = observer(function CompactTicketRow({
+  ticket,
+  assignment,
+  selected,
+  onSelect,
+}: {
+  ticket: HelpdeskTicket;
+  assignment: HelpdeskAssignment | null;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const slaLate = ticket.slaDeadline ? new Date(ticket.slaDeadline) < new Date() : false;
+  const meta = [ticket.stage, ticket.assignee || 'Unassigned', ticket.customer]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <tr
+      className={cn(
+        'cursor-pointer border-b border-border hover:bg-background-secondary/40',
+        selected && 'bg-accent/10 hover:bg-accent/10'
+      )}
+      onClick={onSelect}
+      title={ticket.description}
+    >
+      <td className="max-w-0 px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-xs text-foreground-muted">#{ticket.ref}</span>
+          <span className="truncate">{ticket.name}</span>
+        </div>
+        <div className="flex min-w-0 items-center gap-2 text-xs text-foreground-muted">
+          {ticket.priority > 0 && <Stars value={ticket.priority} />}
+          <span className="truncate">{meta}</span>
+          {ticket.slaDeadline && (
+            <span className={cn('shrink-0', slaLate && 'text-red-500')}>
+              SLA {formatDay(ticket.slaDeadline)}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-1.5 text-right">
+        {assignment && <CompactAgentStatus assignment={assignment} />}
+      </td>
+    </tr>
+  );
+});
+
+const CompactAgentStatus = observer(function CompactAgentStatus({
+  assignment,
+}: {
+  assignment: HelpdeskAssignment;
+}) {
+  const taskStore = getTaskStore(assignment.projectId, assignment.taskId);
+  const status = taskStore ? (taskAgentStatus(taskStore) ?? 'idle') : 'missing';
+  const label = STATUS_LABEL[status] ?? STATUS_LABEL.idle;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <AgentIcon id={assignment.provider} size={14} />
+      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', label.className)}>
+        {label.text}
+      </span>
+    </span>
   );
 });
 

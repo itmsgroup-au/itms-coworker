@@ -4,7 +4,6 @@ import {
   CircleCheck,
   Clock,
   FolderInput,
-  MessageSquareShare,
   Settings,
   Ticket,
   Workflow,
@@ -18,7 +17,6 @@ import { HelpdeskOpenCount } from '@core/features/helpdesk/contributions/browser
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import { jidoViewDef } from '@core/features/jido/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
-import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
 import { WORKBENCH_BOTTOM_BAR_HEIGHT_PX } from '@core/primitives/layouts/api/workbench-layout';
 import {
@@ -48,7 +46,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
 
-  const openFeedbackModal = useOpenModal('feedbackModal');
   // Projects are the folders the work happens in, not the work itself, so the
   // group starts closed and the ticket queue and procedures sit above it.
   const [showProjects, setShowProjects] = React.useState(false);
@@ -174,17 +171,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarMenu>
         </SidebarFooter>
         <div
-          className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-3"
+          className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-3"
           style={{ height: WORKBENCH_BOTTOM_BAR_HEIGHT_PX }}
         >
-          <button
-            type="button"
-            className="flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm text-foreground-muted focus:outline-none focus-visible:outline-none"
-            onClick={() => void openFeedbackModal({})}
-          >
-            <MessageSquareShare className="size-4 shrink-0" />
-            <span className="truncate">Give feedback</span>
-          </button>
           <UpdateSection />
         </div>
       </SidebarContainer>
