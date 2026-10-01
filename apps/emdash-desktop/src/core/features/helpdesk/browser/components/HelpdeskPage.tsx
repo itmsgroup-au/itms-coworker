@@ -847,56 +847,51 @@ export const AssignForm = observer(function AssignForm({
 
   return (
     <div>
-        <div className="flex flex-wrap items-end gap-4">
-          <Field label="Worker">
-            <AgentSelector
-              value={effectiveProvider}
-              onChange={setProvider}
-              connectionId={project?.connectionId}
-              className="w-[240px]"
-            />
-          </Field>
-          <Field label="Project (the worker's computer)">
-            <Select.Root
-              value={projectId ?? ''}
-              onValueChange={(v) => setProjectId(v || undefined)}
-            >
-              <Select.Trigger className="w-[260px] gap-2">
-                <Select.Value>{project?.name ?? 'The Odoo project for this server'}</Select.Value>
-              </Select.Trigger>
-              <Select.Content>
-                {projects.map((p) => (
-                  <Select.Item key={p.id} value={p.id}>
-                    {p.name}
-                    {p.connectionId ? ' (remote)' : ''}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
-          </Field>
-          <div className="flex gap-2">
-            {onCancel && (
-              <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-                Cancel
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => void start()}
-              disabled={busy || !effectiveProvider}
-            >
-              {busy ? (startingStep ?? 'Starting…') : 'Start on this ticket'}
+      <div className="flex flex-wrap items-end gap-4">
+        <Field label="Worker">
+          <AgentSelector
+            value={effectiveProvider}
+            onChange={setProvider}
+            connectionId={project?.connectionId}
+            className="w-[240px]"
+          />
+        </Field>
+        <Field label="Project (the worker's computer)">
+          <Select.Root value={projectId ?? ''} onValueChange={(v) => setProjectId(v || undefined)}>
+            <Select.Trigger className="w-[260px] gap-2">
+              <Select.Value>{project?.name ?? 'The Odoo project for this server'}</Select.Value>
+            </Select.Trigger>
+            <Select.Content>
+              {projects.map((p) => (
+                <Select.Item key={p.id} value={p.id}>
+                  {p.name}
+                  {p.connectionId ? ' (remote)' : ''}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </Field>
+        <div className="flex gap-2">
+          {onCancel && (
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+              Cancel
             </Button>
-          </div>
+          )}
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => void start()}
+            disabled={busy || !effectiveProvider}
+          >
+            {busy ? (startingStep ?? 'Starting…') : 'Start on this ticket'}
+          </Button>
         </div>
-        {state?.phase === 'error' && (
-          <div className="mt-2 text-xs text-red-600">{state.message}</div>
-        )}
-        <div className="mt-2 text-xs text-foreground-muted">
-          The worker reads the ticket from Odoo, investigates, and reports back in its task. It does
-          not change the ticket or send anything without asking.
-        </div>
+      </div>
+      {state?.phase === 'error' && <div className="mt-2 text-xs text-red-600">{state.message}</div>}
+      <div className="mt-2 text-xs text-foreground-muted">
+        The worker reads the ticket from Odoo, investigates, and reports back in its task. It does
+        not change the ticket or send anything without asking.
+      </div>
     </div>
   );
 });

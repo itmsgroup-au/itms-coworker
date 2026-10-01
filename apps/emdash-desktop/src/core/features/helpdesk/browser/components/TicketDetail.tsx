@@ -11,6 +11,10 @@ import {
   postHelpdeskNote,
   useHelpdeskMessages,
 } from '@core/features/helpdesk/api/browser/use-helpdesk';
+import {
+  lastAssistantText,
+  TicketAgentChat,
+} from '@core/features/helpdesk/contributions/browser/agent-chat';
 import type {
   HelpdeskMessage,
   HelpdeskTicket,
@@ -26,7 +30,6 @@ import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { cn } from '@core/primitives/styling/browser/cn';
 import { AgentProgressList } from './AgentProgress';
-import { lastAssistantText, TicketAgentChat } from './TicketAgentChat';
 
 type Tab = 'thread' | 'agent';
 
@@ -104,7 +107,12 @@ export const TicketDetail = observer(function TicketDetail({
       >
         {tab === 'thread' && <ThreadTab profile={profile} ticket={ticket} />}
         {tab === 'agent' && (
-          <AgentTab profile={profile} ticket={ticket} assignment={assignment} startForm={startForm} />
+          <AgentTab
+            profile={profile}
+            ticket={ticket}
+            assignment={assignment}
+            startForm={startForm}
+          />
         )}
       </div>
     </div>

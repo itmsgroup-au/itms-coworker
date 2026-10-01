@@ -17,6 +17,7 @@ describe('viewCatalog', () => {
       'helpdesk',
       'jido',
       'approvals',
+      'chat',
     ]);
   });
 
@@ -69,6 +70,7 @@ describe('viewCatalog', () => {
       helpdesk: 'helpdesk_viewed',
       jido: 'jido_viewed',
       approvals: 'approvals_viewed',
+      chat: 'chat_viewed',
     });
   });
 });

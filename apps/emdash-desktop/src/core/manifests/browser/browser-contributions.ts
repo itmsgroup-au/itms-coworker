@@ -1,5 +1,6 @@
 import { approvalsBrowserContributions } from '@core/features/approvals/contributions/browser';
 import { automationsBrowserContributions } from '@core/features/automations/contributions/browser';
+import { chatBrowserContributions } from '@core/features/chat/contributions/browser';
 import { conversationsBrowserContributions } from '@core/features/conversations/contributions/browser';
 import { devPerfBrowserContributions } from '@core/features/dev-perf/contributions/browser';
 import { editorBrowserContributions } from '@core/features/editor/contributions/browser';
@@ -24,6 +25,7 @@ export const featureViewRuntimes = [
   ...helpdeskBrowserContributions.views,
   ...jidoBrowserContributions.views,
   ...approvalsBrowserContributions.views,
+  ...chatBrowserContributions.views,
 ] as const;
 
 export const featureModalDefs = [

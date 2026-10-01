@@ -97,7 +97,7 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
 
 - **Talking to the agent on a ticket (16 September 2026).** The Agent tab in
   `TicketDetail.tsx` is a real ACP chat, not a progress summary.
-  - `browser/components/TicketAgentChat.tsx` mounts an `AcpChatStore` plus `ChatTranscript`
+  - `contributions/browser/agent-chat.tsx` (`TicketAgentChat`, also used by Chat) mounts an `AcpChatStore` plus `ChatTranscript`
     with a small composer. It resolves the conversation from the wire
     (`client.getConversationsForTask`), not from `conversationRegistry`, so the transcript
     loads without the user opening the task view first. `AcpChatPanel` itself could not be
@@ -158,7 +158,18 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
   the same call the task chat makes. The page also links to the Odoo procedure approvals in
   Procedures. Part of beadwork epic `itms-cow-iw9` (the openworker-style simple mode).
 
-- **Sidebar.** The "Work" group leads with Tickets, Approvals and Procedures; Projects is
+- **Chat.** View id `chat`, under `apps/emdash-desktop/src/core/features/chat/`. A general
+  chat with no ticket or project to pick: one box and a worker picker (default Hermes, shown
+  as ITMS CoWorker). Each chat is an ACP task in the project at `~/ITMS CoWorker/chat`, which
+  the `chat` wire domain (`node/chat-service.ts`) creates once as a git repository holding an
+  `AGENTS.md` that points local agents at atlas. The chat pane is `TicketAgentChat`.
+
+- **Settings → Atlas.** `features/atlas/`: atlas path, version, client count and the
+  read/write split from `atlas commands --json`; Run check (`atlas doctor`), Sync clients
+  (`atlas client sync`, dry run first, passing the default Odoo server's atlas profile) and
+  Start/Stop for `atlas serve`.
+
+- **Sidebar.** The "Work" group leads with Chat, Tickets, Approvals and Procedures; Projects is
   collapsed by default below them.
 
 ## Adding another Settings section (the recipe)

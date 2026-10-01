@@ -4,6 +4,7 @@ import { atlasContract, atlasDomain } from '@core/features/atlas/api';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
+import { chatContract, chatDomain } from '@core/features/chat/api';
 import { conversationsContract, conversationsDomain } from '@core/features/conversations/api';
 import { devPerfContract, devPerfDomain } from '@core/features/dev-perf/api';
 import { editorContract, editorDomain } from '@core/features/editor/api';
@@ -70,6 +71,7 @@ export const desktopDomainContracts = {
   [mcpDomain]: mcpContract,
   [odooDomain]: odooContract,
   [atlasDomain]: atlasContract,
+  [chatDomain]: chatContract,
   [skillsDomain]: skillsContract,
   [terminalsDomain]: terminalsContract,
   [mementosDomain]: mementosWireContract,

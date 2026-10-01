@@ -2,6 +2,7 @@ import { MicroLabel } from '@emdash/ui/react/primitives';
 import {
   ChevronRight,
   CircleCheck,
+  MessageSquare,
   Clock,
   FolderInput,
   Settings,
@@ -13,6 +14,7 @@ import React from 'react';
 import { ApprovalsPendingCount } from '@core/features/approvals/contributions/browser/pending-count';
 import { approvalsViewDef } from '@core/features/approvals/contributions/views';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { chatViewDef } from '@core/features/chat/contributions/views';
 import { HelpdeskOpenCount } from '@core/features/helpdesk/contributions/browser/open-count';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import { jidoViewDef } from '@core/features/jido/contributions/views';
@@ -79,6 +81,17 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             </div>
             <SidebarGroupContent>
               <SidebarMenu>
+                <SidebarMenuButton
+                  isActive={isCurrentView(currentView, 'chat')}
+                  onClick={() => navigate(chatViewDef({}))}
+                  aria-label="Chat"
+                  className="w-full justify-between"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <MessageSquare className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                    <span className="truncate">Chat</span>
+                  </span>
+                </SidebarMenuButton>
                 <SidebarMenuButton
                   isActive={isCurrentView(currentView, 'helpdesk')}
                   onClick={() => navigate(helpdeskViewDef({}))}

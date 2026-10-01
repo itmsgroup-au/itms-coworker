@@ -190,7 +190,7 @@ async function resolveOdooProjectId(
   return result.projectId;
 }
 
-function findProjectIdByPath(path: string): string | undefined {
+export function findProjectIdByPath(path: string): string | undefined {
   const wanted = normalizePath(path);
   for (const [id, store] of getProjectManagerStore().projects.entries()) {
     const data = projectData(store);
@@ -213,7 +213,7 @@ function normalizePath(path: string): string {
 }
 
 /** Hydrates the project context, then waits for its task manager to exist. */
-async function waitForTaskManager(projectId: string) {
+export async function waitForTaskManager(projectId: string) {
   await getProjectManagerStore().hydrateProjectContext(projectId);
   try {
     await when(() => getTaskManagerStore(projectId) !== undefined, {
@@ -227,7 +227,7 @@ async function waitForTaskManager(projectId: string) {
   return taskManager;
 }
 
-function describe(error: { type: string; message?: string }): string {
+export function describe(error: { type: string; message?: string }): string {
   return error.message && error.message.length > 0 ? error.message : error.type;
 }
 

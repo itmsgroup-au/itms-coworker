@@ -21,6 +21,7 @@ import {
   type BrowserOperations,
 } from '@core/features/browser/node/wire-controller';
 import { createCatalogWireController } from '@core/features/catalog/node/wire-controller';
+import { createChatWireController } from '@core/features/chat/node/wire-controller';
 import type { CompensationRunner } from '@core/features/conversations/node/createConversation';
 import { createConversationsWireController } from '@core/features/conversations/node/wire-controller';
 import {
@@ -241,6 +242,9 @@ export const desktopNodeControllers = {
   },
   atlas: {
     create: () => createAtlasWireController(),
+  },
+  chat: {
+    create: () => createChatWireController(),
   },
   promptLibrary: {
     create: ({ promptLibrary }) => createPromptLibraryWireController(promptLibrary),

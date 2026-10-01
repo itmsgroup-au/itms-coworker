@@ -1,5 +1,6 @@
 import { approvalsViewDef } from '@core/features/approvals/contributions/views';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { chatViewDef } from '@core/features/chat/contributions/views';
 import { helpdeskViewDef } from '@core/features/helpdesk/contributions/views';
 import { jidoViewDef } from '@core/features/jido/contributions/views';
 import { projectViewDef } from '@core/features/projects/contributions/views';
@@ -17,6 +18,7 @@ export const viewCatalog = defineViewCatalog([
   helpdeskViewDef,
   jidoViewDef,
   approvalsViewDef,
+  chatViewDef,
 ] as const);
 
 export type ViewId = (typeof viewCatalog.defs)[number]['id'];
