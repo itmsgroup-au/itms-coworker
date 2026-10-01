@@ -1,5 +1,10 @@
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
-import { Button, Select } from '@emdash/ui/react/primitives';
+import {
+  Button,
+  Resizable,
+  Select,
+  useResizableDefaultLayout,
+} from '@emdash/ui/react/primitives';
 import { ChevronDown, ChevronRight, Headset, Loader2, RefreshCw, Star } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
@@ -37,6 +42,7 @@ import { useAppSettingsKey } from '@core/features/settings/api/browser/use-app-s
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
+import { useWorkspaceLayoutContext } from '@core/features/workbench/contributions/browser/layout-provider';
 import type { HelpdeskAssignment } from '@core/primitives/app-settings/api';
 import {
   useCurrentViewParams,
@@ -300,8 +306,20 @@ const TicketList = observer(function TicketList({
       />
       {tickets.error && <ErrorLine error={tickets.error} />}
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border border-border">
+      <TicketSplit
+        detail={
+          selectedTicket ? (
+            <TicketDetail
+              profile={profile}
+              ticket={selectedTicket}
+              assignment={assignments[assignmentKey(profile.id, selectedTicket.id)] ?? null}
+              onClose={() => onSelect(null)}
+              onAssign={() => void launcher.start(selectedTicket)}
+            />
+          ) : null
+        }
+      >
+        <div className="h-full min-h-0 min-w-0 overflow-auto rounded-lg border border-border">
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-background-secondary text-left text-xs font-medium text-foreground-muted">
@@ -394,21 +412,45 @@ const TicketList = observer(function TicketList({
             </tbody>
           </table>
         </div>
-        {selectedTicket && (
-          <div className="w-[460px] shrink-0 overflow-hidden rounded-lg border border-border bg-background">
-            <TicketDetail
-              profile={profile}
-              ticket={selectedTicket}
-              assignment={assignments[assignmentKey(profile.id, selectedTicket.id)] ?? null}
-              onClose={() => onSelect(null)}
-              onAssign={() => void launcher.start(selectedTicket)}
-            />
-          </div>
-        )}
-      </div>
+      </TicketSplit>
     </div>
   );
 });
+
+/**
+ * The ticket list and, when a ticket is open, its detail pane beside it. The
+ * divider drags; the width is kept in the workspace layout store, so it
+ * survives a restart.
+ */
+function TicketSplit({ children, detail }: { children: React.ReactNode; detail: React.ReactNode }) {
+  const { layoutStorage } = useWorkspaceLayoutContext();
+  const panelIds = detail ? ['helpdesk-list', 'helpdesk-detail'] : ['helpdesk-list'];
+  const { defaultLayout, onLayoutChanged } = useResizableDefaultLayout({
+    id: 'helpdesk-ticket-split',
+    panelIds,
+    storage: layoutStorage,
+  });
+  if (!detail) return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
+  return (
+    <Resizable.Group
+      id="helpdesk-ticket-split"
+      orientation="horizontal"
+      className="min-h-0 flex-1"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+    >
+      <Resizable.Panel id="helpdesk-list" minSize="25%">
+        {children}
+      </Resizable.Panel>
+      <Resizable.Handle variant="ghost" className="mx-2" />
+      <Resizable.Panel id="helpdesk-detail" defaultSize="35%" minSize="320px" maxSize="75%">
+        <div className="h-full overflow-hidden rounded-lg border border-border bg-background">
+          {detail}
+        </div>
+      </Resizable.Panel>
+    </Resizable.Group>
+  );
+}
 
 function GroupRows({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
