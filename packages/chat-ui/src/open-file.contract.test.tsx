@@ -96,6 +96,35 @@ describe('open-file command contract', () => {
     expect(onOpenFile).toHaveBeenCalledTimes(1);
   });
 
+  it('passes a classified prose link line to the file opener', async () => {
+    const onOpenFile = vi.fn();
+    const host = mount(
+      [
+        {
+          kind: 'message',
+          id: 'message-1',
+          role: 'assistant',
+          text: '[source](src/app.ts:42)',
+        },
+      ],
+      {
+        classifyLink: () => ({ kind: 'workspace-file', path: 'src/app.ts', line: 42 }),
+        onOpenFile,
+      }
+    );
+    await nextPaint();
+
+    const link = host.querySelector('a[href="src/app.ts:42"]') as HTMLElement | null;
+    expect(link).not.toBeNull();
+    expect(dispatchLinkClick(link!)).toBe(true);
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'src/app.ts',
+      line: 42,
+      itemId: 'message-1#0',
+      source: 'prose-link',
+    });
+  });
+
   it('routes diff, file-operation, and resource file rows through onOpenFile', async () => {
     const onOpenFile = vi.fn();
     const host = mount(
@@ -113,7 +142,7 @@ describe('open-file command contract', () => {
           id: 'file-op-1',
           op: 'read',
           status: 'done',
-          ops: [{ path: 'src/file-op.ts' }],
+          ops: [{ path: 'src/file-op.ts', line: 17 }],
         },
         {
           kind: 'resource-link',
@@ -138,9 +167,60 @@ describe('open-file command contract', () => {
 
     expect(onOpenFile.mock.calls.map(([arg]) => arg)).toEqual([
       { path: 'src/diff.ts', itemId: 'edit-1:src/diff.ts', source: 'diff' },
-      { path: 'src/file-op.ts', itemId: 'file-op-1', source: 'file-op' },
+      { path: 'src/file-op.ts', line: 17, itemId: 'file-op-1', source: 'file-op' },
       { path: 'src/resource.ts', itemId: 'resource-1', source: 'resource-link' },
     ]);
+  });
+
+  it('opens a read tool from its structured location instead of its quoted title', async () => {
+    const onOpenFile = vi.fn();
+    const host = mount(
+      [
+        {
+          kind: 'read-tool-call',
+          id: 'read-1',
+          seq: 0,
+          toolCallId: 'call-1',
+          title: "Read file '/workspace/AGENTS.md'",
+          status: 'done',
+          locations: [{ path: '/workspace/AGENTS.md', line: 12 }],
+        },
+      ],
+      { onOpenFile }
+    );
+    await nextPaint();
+
+    clickableRowForPath(host, '/workspace/AGENTS.md').click();
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: '/workspace/AGENTS.md',
+      line: 12,
+      itemId: 'read-1',
+      source: 'file-op',
+    });
+  });
+
+  it('renders a read tool without locations as a non-clickable status row', async () => {
+    const onOpenFile = vi.fn();
+    const host = mount(
+      [
+        {
+          kind: 'read-tool-call',
+          id: 'read-1',
+          seq: 0,
+          toolCallId: 'call-1',
+          title: 'Read File',
+          status: 'done',
+          locations: [],
+        },
+      ],
+      { onOpenFile }
+    );
+    await nextPaint();
+
+    expect(host.textContent).toContain('Read File');
+    expect(host.querySelector('[role="button"]')).toBeNull();
+    expect(onOpenFile).not.toHaveBeenCalled();
   });
 
   it('routes file mentions through onClickMention', async () => {

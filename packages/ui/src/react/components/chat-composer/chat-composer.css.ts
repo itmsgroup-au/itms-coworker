@@ -198,7 +198,29 @@ export const toolbar = style({
   paddingBottom: '0.5rem',
 });
 
-export const toolbarLeft = style({ display: 'flex', alignItems: 'center', gap: '0.375rem' });
+export const toolbarLeft = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.375rem',
+  minHeight: '2rem',
+});
+
+export const mcpNameGroup = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  minWidth: 0,
+});
+
+export const mcpInfoIcon = style({
+  transform: 'translateY(1px)',
+});
+
+export const mcpErrorText = style({
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  whiteSpace: 'pre-wrap',
+});
 export const toolbarRight = style({ display: 'flex', alignItems: 'center', gap: '0.25rem' });
 
 export const permissionModeTrigger = style({
@@ -206,10 +228,15 @@ export const permissionModeTrigger = style({
   paddingRight: '0.1875rem',
 });
 
+export const selectedModelEffort = style({
+  color: vars.foregroundMuted,
+});
+
 export const mcpTrigger = style([
   svgContainer,
   {
     display: 'inline-flex',
+    height: '1.75rem',
     alignItems: 'center',
     gap: '0.25rem',
     borderRadius: tokenVars.radiusMd,
@@ -220,6 +247,7 @@ export const mcpTrigger = style([
     lineHeight: 1,
     outline: 'none',
     selectors: {
+      '&[data-failed]': { color: vars.surfaceDestructiveForeground },
       '&:hover': { backgroundColor: vars.surfaceBaseSelected },
       '&[data-popup-open]': { backgroundColor: vars.surfaceBaseSelected },
     },
@@ -246,6 +274,9 @@ export const mcpRow = style({
   padding: '0.375rem 0.5rem',
   fontSize: tokenVars.textSm,
   color: vars.foreground,
+  selectors: {
+    '&[data-failed]': { color: vars.surfaceDestructiveForeground },
+  },
 });
 
 export const mcpName = style({
@@ -262,6 +293,9 @@ export const mcpBadge = style({
   padding: '0.0625rem 0.3125rem',
   fontSize: tokenVars.textXs,
   color: vars.foregroundMuted,
+  selectors: {
+    '&[data-failed]': { color: vars.surfaceDestructiveForeground },
+  },
 });
 
 // ── Agent trigger ─────────────────────────────────────────────────────────────

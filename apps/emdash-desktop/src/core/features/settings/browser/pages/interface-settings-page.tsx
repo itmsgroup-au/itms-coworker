@@ -6,6 +6,7 @@ import KeyboardSettingsCard from '../components/KeyboardSettingsCard';
 import SidebarMetadataSettingsCard from '../components/SidebarMetadataSettingsCard';
 import TerminalSettingsCard from '../components/TerminalSettingsCard';
 import ThemeCard from '../components/ThemeCard';
+import { TrayIconSettingsRow } from '../components/TrayIconSettingsRow';
 import { WorkbenchModeCard } from '../components/WorkbenchModeCard';
 
 export function InterfaceSettingsPage() {
@@ -21,6 +22,9 @@ export function InterfaceSettingsPage() {
       </SettingsSection>
       <SettingsSection title="Color mode" bare>
         <ThemeCard />
+      </SettingsSection>
+      <SettingsSection title="Application icon">
+        <TrayIconSettingsRow />
       </SettingsSection>
       <SettingsSection title="Terminal" bare>
         <TerminalSettingsCard />

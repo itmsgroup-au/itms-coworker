@@ -84,12 +84,32 @@ describe('buildAllowlistedAgentEnv', () => {
         PATH: '/bin',
         anthropic_api_key: 'excluded',
         ANTHROPIC_API_KEY: 'included',
+        META_API_KEY: 'meta-secret',
       },
       { platform: 'posix' }
     );
 
     expect(env.PATH).toBe('/bin');
     expect(env.ANTHROPIC_API_KEY).toBe('included');
+    expect(env.META_API_KEY).toBe('meta-secret');
+  });
+
+  it('forwards all persistent XDG base-directory variables', () => {
+    const env = buildAllowlistedAgentEnv({
+      XDG_CACHE_HOME: '/home/ada/.cache',
+      XDG_CONFIG_HOME: '/home/ada/.config',
+      XDG_DATA_HOME: '/home/ada/.local/share',
+      XDG_STATE_HOME: '/home/ada/.local/state',
+      XDG_UNSAFE_HOME: '/home/ada/.unsafe',
+    });
+
+    expect(env).toMatchObject({
+      XDG_CACHE_HOME: '/home/ada/.cache',
+      XDG_CONFIG_HOME: '/home/ada/.config',
+      XDG_DATA_HOME: '/home/ada/.local/share',
+      XDG_STATE_HOME: '/home/ada/.local/state',
+    });
+    expect(env.XDG_UNSAFE_HOME).toBeUndefined();
   });
 
   it('forwards supported Prime configuration without leaking internal daemon state', () => {

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { defineWireComponent, requireContract } from '@emdash/wire/worker';
 import { z } from 'zod';
-import { githubAuthContract, pullRequestsContract } from '../api';
+import { gitPlatformAuthContract, pullRequestsContract } from '../api';
 import { PullRequestService } from './pull-request-service';
 import { PullRequestStore, pullRequestSqliteStore } from './store';
 import { createPullRequestsWireController } from './wire-controller';
@@ -24,7 +24,7 @@ export const pullRequestsComponent = defineWireComponent({
   id: 'pull-requests',
   contract: pullRequestsContract,
   requirements: {
-    githubAuth: requireContract(githubAuthContract),
+    githubAuth: requireContract(gitPlatformAuthContract),
   },
   configSchema: pullRequestsComponentConfigSchema,
   create: ({ config, dependencies, instance, logger, scope }) => {
@@ -41,7 +41,7 @@ export const pullRequestsComponent = defineWireComponent({
     });
     return instance({
       scope,
-      controller: createPullRequestsWireController(service),
+      controller: createPullRequestsWireController(service, scope),
     });
   },
 });

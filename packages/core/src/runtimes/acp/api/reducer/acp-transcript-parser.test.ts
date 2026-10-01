@@ -1,13 +1,13 @@
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 /**
  * Unit tests for AcpTranscriptParser.
  *
  * Uses hand-authored minimal SessionUpdate objects — no captured fixtures.
  * Fixture-driven provider-specific tests are a separate follow-up.
  */
-
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
 import { SESSION_PLAN_ID } from '../models/plan';
+import type { TranscriptItem } from '../models/turns';
 import {
   makeDiffId,
   makeMessageId,
@@ -68,10 +68,7 @@ function toolUpdateDone(toolCallId: string): SessionUpdate {
     sessionUpdate: 'tool_call_update',
     sessionId: 'sess-1',
     toolCallId,
-    title: null,
-    kind: null,
     status: 'completed',
-    content: [],
   } as unknown as SessionUpdate;
 }
 
@@ -228,7 +225,7 @@ describe('AcpTranscriptParser', () => {
     p.push(update);
 
     const turnId = makeTurnId(CID, 0);
-    const expectedId = makeMessageId(turnId, 'auto:user:0', 'user');
+    const expectedId = makeMessageId(turnId, null, 'user');
     expect(p.activeTurn?.items[0].id).toBe(expectedId);
   });
 
@@ -253,8 +250,8 @@ describe('AcpTranscriptParser', () => {
     expect(messages.map((message) => message.text)).toEqual(['do it', 'before', 'after']);
     expect(messages.map((message) => message.id)).toEqual([
       makeMessageId(makeTurnId(CID, 0), 'u1', 'user'),
-      makeMessageId(makeTurnId(CID, 0), 'auto:assistant:0', 'assistant'),
-      makeMessageId(makeTurnId(CID, 0), 'auto:assistant:1', 'assistant'),
+      makeMessageId(makeTurnId(CID, 0), null, 'assistant', 0),
+      makeMessageId(makeTurnId(CID, 0), null, 'assistant', 1),
     ]);
     expect(messages.map((message) => message.seq)).toEqual([0, 1, 3]);
   });
@@ -388,6 +385,53 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
+  it('reads execute descriptions from rawInput on the initial tool_call', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'list packages'));
+    p.push({
+      ...toolCallUpdate('exec-1', 'ls packages', 'execute'),
+      rawInput: { command: 'ls packages', description: 'List packages directory' },
+    } as unknown as SessionUpdate);
+
+    expect(p.activeTurn?.items.find((i) => i.kind === 'execute-tool-call')).toMatchObject({
+      command: 'ls packages',
+      inputSummary: 'List packages directory',
+    });
+  });
+
+  it('preserves matching description and content text for provider enrichment', () => {
+    // The baseline decoder is provider-neutral and must preserve content even
+    // when it matches a description. Provider enrichment can classify a known
+    // adapter-specific description echo without risking legitimate output.
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'what branch am I on'));
+    p.push({
+      ...toolCallUpdate('exec-1', 'Terminal', 'execute'),
+      status: 'pending',
+      rawInput: {},
+    } as unknown as SessionUpdate);
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'exec-1',
+      kind: 'execute',
+      title: 'git rev-parse --abbrev-ref HEAD',
+      content: [{ type: 'content', content: { type: 'text', text: 'Get current branch name' } }],
+      rawInput: {
+        command: 'git rev-parse --abbrev-ref HEAD',
+        description: 'Get current branch name',
+      },
+    } as unknown as SessionUpdate);
+
+    const item = p.activeTurn?.items.find((i) => i.kind === 'execute-tool-call');
+    expect(item).toMatchObject({
+      command: 'git rev-parse --abbrev-ref HEAD',
+      inputSummary: 'Get current branch name',
+      outputText: 'Get current branch name',
+      status: 'running',
+    });
+  });
+
   it('passes through standard terminalId on execute tool updates', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'run it'));
@@ -408,7 +452,10 @@ describe('AcpTranscriptParser', () => {
     p.push(toolCallUpdate('fetch-1', 'https://example.test', 'web-fetch'));
     p.push(toolCallUpdate('subagent-1', 'Investigate failure', 'subagent'));
 
-    const items = p.activeTurn?.items ?? [];
+    // Contiguous search/mcp/fetch calls fold into one tool-run group; look through it.
+    const items = (p.activeTurn?.items ?? []).flatMap((i): TranscriptItem[] =>
+      i.kind === 'tool-group' ? (i.children as TranscriptItem[]) : [i]
+    );
     expect(items.find((i) => i.kind === 'search-tool-call')).toMatchObject({
       id: makeToolId(makeTurnId(CID, 0), 'search-1'),
       query: "for 'symbols'",
@@ -422,6 +469,96 @@ describe('AcpTranscriptParser', () => {
     });
     expect(items.find((i) => i.kind === 'spawn-subagent-tool-call')).toMatchObject({
       name: 'Investigate failure',
+    });
+  });
+
+  it('uses structured read locations without parsing the human-readable title', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'read a file'));
+    p.push({
+      sessionUpdate: 'tool_call',
+      sessionId: 'sess-1',
+      toolCallId: 'read-1',
+      title: "Read file '/workspace/AGENTS.md'",
+      kind: 'read',
+      status: 'in_progress',
+      content: [],
+      locations: [{ path: '/workspace/AGENTS.md', line: 12 }],
+    } as unknown as SessionUpdate);
+    p.push(toolUpdateDone('read-1'));
+
+    expect(p.activeTurn?.items.find((item) => item.kind === 'read-tool-call')).toMatchObject({
+      kind: 'read-tool-call',
+      title: "Read file '/workspace/AGENTS.md'",
+      status: 'done',
+      locations: [{ path: '/workspace/AGENTS.md', line: 12 }],
+    });
+  });
+
+  it('applies locations-only updates with replace and clear semantics', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'read files'));
+    p.push({
+      sessionUpdate: 'tool_call',
+      sessionId: 'sess-1',
+      toolCallId: 'read-1',
+      title: 'Read File',
+      kind: 'read',
+      status: 'pending',
+      content: [],
+      locations: [],
+    } as unknown as SessionUpdate);
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'read-1',
+      locations: [{ path: '/workspace/a.ts', line: 3 }, { path: '/workspace/b.ts' }],
+    } as unknown as SessionUpdate);
+
+    expect(p.activeTurn?.items.find((item) => item.kind === 'read-tool-call')).toMatchObject({
+      locations: [{ path: '/workspace/a.ts', line: 3 }, { path: '/workspace/b.ts' }],
+    });
+
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'read-1',
+      locations: [],
+    } as unknown as SessionUpdate);
+
+    expect(p.activeTurn?.items.find((item) => item.kind === 'read-tool-call')).toMatchObject({
+      locations: [],
+    });
+  });
+
+  it('does not let a presentation title override an explicit execute kind', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'run a command'));
+    p.push(toolCallUpdate('exec-1', 'Read package metadata', 'execute'));
+
+    expect(p.activeTurn?.items.find((item) => item.kind.endsWith('-tool-call'))).toMatchObject({
+      kind: 'execute-tool-call',
+      command: 'Read package metadata',
+    });
+  });
+
+  it('reclassifies a tool when a later update supplies its read kind and locations', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'use a tool'));
+    p.push(toolCallUpdate('tool-1', 'Working', 'other'));
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'tool-1',
+      kind: 'read',
+      title: 'Reading source',
+      locations: [{ path: '/workspace/source.ts' }],
+    } as unknown as SessionUpdate);
+
+    expect(p.activeTurn?.items.find((item) => item.kind.endsWith('-tool-call'))).toMatchObject({
+      kind: 'read-tool-call',
+      title: 'Reading source',
+      locations: [{ path: '/workspace/source.ts' }],
     });
   });
 
@@ -453,7 +590,7 @@ describe('AcpTranscriptParser', () => {
     const items = p.activeTurn?.items ?? [];
     expect(items.find((i) => i.kind === 'tool-group')).toMatchObject({
       id: makeToolGroupId(makeToolId(makeTurnId(CID, 0), 'read-1')),
-      label: '2 file reads',
+      label: 'Read 2 files',
       groupKind: 'read-batch',
       status: 'running',
       children: [
@@ -463,17 +600,7 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
-  it('does not group reads separated by a search', () => {
-    const p = new AcpTranscriptParser(deps());
-    p.push(userChunk('u1', 'read files'));
-    p.push(toolCallUpdate('read-1', 'Read src/a.ts', 'read'));
-    p.push(toolCallUpdate('search-1', 'Search foo', 'search'));
-    p.push(toolCallUpdate('read-2', 'Read src/b.ts', 'read'));
-
-    expect(p.activeTurn?.items.filter((i) => i.kind === 'tool-group')).toHaveLength(0);
-  });
-
-  it('folds consecutive reads and commands into one group with a combined label', () => {
+  it('groups a mixed run of reads and commands into one tool-run group', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'read files'));
     p.push(toolCallUpdate('read-1', 'Read src/a.ts', 'read'));
@@ -483,10 +610,20 @@ describe('AcpTranscriptParser', () => {
     const groups = p.activeTurn?.items.filter((i) => i.kind === 'tool-group') ?? [];
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({
-      label: '2 file reads, 1 command',
-      groupKind: 'tool-batch',
+      label: 'Ran a command, read 2 files',
+      groupKind: 'tool-run',
+      children: [{ id: makeToolId(makeTurnId(CID, 0), 'read-1') }, {}, {}],
     });
-    expect((groups[0] as { children: unknown[] }).children).toHaveLength(3);
+  });
+
+  it('does not group tool calls separated by an assistant message', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'read files'));
+    p.push(toolCallUpdate('exec-1', 'echo one', 'execute'));
+    p.push(assistantChunk('a1', 'Now the second one.'));
+    p.push(toolCallUpdate('exec-2', 'echo two', 'execute'));
+
+    expect(p.activeTurn?.items.filter((i) => i.kind === 'tool-group')).toHaveLength(0);
   });
 
   // ── File operation tool calls ─────────────────────────────────────────────
@@ -558,6 +695,44 @@ describe('AcpTranscriptParser', () => {
     expect(fileOps.every((item) => item.status === 'done')).toBe(true);
   });
 
+  it('replaces and clears file operations when an update replaces ACP content', () => {
+    const p = new AcpTranscriptParser(deps());
+    p.push(userChunk('u1', 'patch files'));
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'tc-replace',
+      title: 'Apply patch',
+      kind: 'edit',
+      status: 'in_progress',
+      content: [
+        { type: 'diff', path: 'src/a.ts', oldText: 'a', newText: 'aa' },
+        { type: 'diff', path: 'src/b.ts', oldText: 'b', newText: 'bb' },
+      ],
+    } as unknown as SessionUpdate);
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'tc-replace',
+      content: [{ type: 'diff', path: 'src/b.ts', oldText: 'b', newText: 'bbb' }],
+    } as unknown as SessionUpdate);
+
+    expect(
+      p.activeTurn?.items.filter((item) => 'toolCallId' in item && item.toolCallId === 'tc-replace')
+    ).toMatchObject([{ kind: 'modify-file-tool-call', path: 'src/b.ts', newText: 'bbb' }]);
+
+    p.push({
+      sessionUpdate: 'tool_call_update',
+      sessionId: 'sess-1',
+      toolCallId: 'tc-replace',
+      content: [],
+    } as unknown as SessionUpdate);
+
+    expect(
+      p.activeTurn?.items.filter((item) => 'toolCallId' in item && item.toolCallId === 'tc-replace')
+    ).toEqual([]);
+  });
+
   it('diff-less edit tool_update does not create a placeholder tool call', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(userChunk('u1', 'edit file'));
@@ -601,17 +776,11 @@ describe('AcpTranscriptParser', () => {
     });
   });
 
-  it('idle-phase plan opens an agent turn and updates the session-scoped plan slice', () => {
+  it('idle-phase plan updates the session-scoped slice without opening an agent turn', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(planUpdate([{ content: 'Agent step', status: 'in_progress', priority: 'medium' }]), 100);
 
-    expect(p.activeTurn?.initiator).toBe('agent');
-    expect(p.activeTurn?.items.find((item) => item.kind === 'create-plan-tool-call')).toMatchObject(
-      {
-        status: 'running',
-        planId: SESSION_PLAN_ID,
-      }
-    );
+    expect(p.activeTurn).toBeNull();
     expect(p.plan).toEqual({
       id: SESSION_PLAN_ID,
       entries: [
@@ -658,7 +827,7 @@ describe('AcpTranscriptParser', () => {
     expect(
       p.history[0].items.find((item) => item.kind === 'spawn-subagent-tool-call')
     ).toMatchObject({
-      status: 'done',
+      status: 'running',
       background: true,
       agentId: 'agent-1',
     });
@@ -884,129 +1053,49 @@ function sessionInfoUpdate(title: string): SessionUpdate {
 describe('AcpTranscriptParser – session slices', () => {
   // ── Config derivation ──────────────────────────────────────────────────────
 
-  it('config_option_update populates modelOptions, efforts, modeOptions', () => {
+  it('retains provider-native groups, booleans and unknown categories', () => {
     const p = new AcpTranscriptParser(deps());
-    p.push(
-      configOptionUpdate([
-        {
-          id: 'model',
-          category: 'model',
-          type: 'select',
-          currentValue: 'opus',
-          options: [
-            { value: 'opus', name: 'Opus' },
-            { value: 'haiku', name: 'Haiku' },
-          ],
-        },
-        {
-          id: 'reasoning_effort',
-          category: 'thought_level',
-          type: 'select',
-          currentValue: 'high',
-          options: [
-            { value: 'low', name: 'Low' },
-            { value: 'high', name: 'High' },
-          ],
-        },
-        {
-          id: 'mode',
-          category: 'mode',
-          type: 'select',
-          currentValue: 'default',
-          options: [
-            { value: 'default', name: 'Default' },
-            { value: 'plan', name: 'Plan' },
-          ],
-        },
-      ])
-    );
-
-    const { modelOptions, efforts, modeOptions } = p.config;
-
-    expect(modelOptions?.configId).toBe('model');
-    expect(modelOptions?.selected).toBe('opus');
-    expect(modelOptions?.available).toHaveLength(2);
-    expect(modelOptions?.available[0]).toEqual({ id: 'opus', name: 'Opus' });
-
-    expect(efforts?.configId).toBe('reasoning_effort');
-    expect(efforts?.selected).toBe('high');
-    expect(efforts?.available).toHaveLength(2);
-    expect(efforts?.available[1]).toEqual({ id: 'high', name: 'High' });
-
-    expect(modeOptions?.configId).toBe('mode');
-    expect(modeOptions?.selected).toBe('default');
-    expect(modeOptions?.available).toHaveLength(2);
-    expect(modeOptions?.available[0]).toEqual({ id: 'default', name: 'Default' });
+    const options = [
+      {
+        id: 'native-model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'a',
+        options: [{ group: 'family', name: 'Family', options: [{ value: 'a', name: 'A' }] }],
+      },
+      { id: 'fast', name: 'Fast mode', type: 'boolean', currentValue: false },
+      {
+        id: 'custom',
+        name: 'Custom',
+        category: 'provider-specific',
+        type: 'select',
+        currentValue: 'on',
+        options: [{ value: 'on', name: 'Enabled' }],
+      },
+    ];
+    p.push(configOptionUpdate(options));
+    expect(p.config.options).toEqual(options);
+    p.push(configOptionUpdate([]));
+    expect(p.config.options).toEqual([]);
   });
 
-  it('config_option_update preserves description on options', () => {
-    const p = new AcpTranscriptParser(deps());
-    p.push(
-      configOptionUpdate([
-        {
-          id: 'model',
-          category: 'model',
-          type: 'select',
-          currentValue: 'opus',
-          options: [{ value: 'opus', name: 'Opus', description: 'Most capable' }],
-        },
-      ])
-    );
-    expect(p.config.modelOptions?.available[0].description).toBe('Most capable');
-  });
-
-  it('unknown category (model_config) is ignored', () => {
-    const p = new AcpTranscriptParser(deps());
-    p.push(
-      configOptionUpdate([
-        {
-          id: 'fast',
-          category: 'model_config',
-          type: 'select',
-          currentValue: 'off',
-          options: [
-            { value: 'on', name: 'On' },
-            { value: 'off', name: 'Off' },
-          ],
-        },
-      ])
-    );
-    // No crash; all groups remain null since no recognized category was present
-    expect(p.config.modelOptions).toBeNull();
-    expect(p.config.efforts).toBeNull();
-    expect(p.config.modeOptions).toBeNull();
-  });
-
-  // ── current_mode_update ────────────────────────────────────────────────────
-
-  it('current_mode_update sets modeOptions.selected when modeOptions is already populated', () => {
+  it('does not let deprecated mode notifications overwrite native configuration', () => {
     const p = new AcpTranscriptParser(deps());
     p.push(
       configOptionUpdate([
         {
           id: 'mode',
-          category: 'mode',
+          name: 'Mode',
           type: 'select',
-          currentValue: 'default',
-          options: [
-            { value: 'default', name: 'Default' },
-            { value: 'acceptEdits', name: 'Accept Edits' },
-          ],
+          currentValue: 'ask',
+          options: [{ value: 'ask', name: 'Ask' }],
         },
       ])
     );
-    expect(p.config.modeOptions?.selected).toBe('default');
-
+    const before = p.config;
     p.push(currentModeUpdate('acceptEdits'));
-    expect(p.config.modeOptions?.selected).toBe('acceptEdits');
-    // available list unchanged
-    expect(p.config.modeOptions?.available).toHaveLength(2);
-  });
-
-  it('current_mode_update is a no-op when modeOptions is null', () => {
-    const p = new AcpTranscriptParser(deps());
-    p.push(currentModeUpdate('acceptEdits'));
-    expect(p.config.modeOptions).toBeNull();
+    expect(p.config).toEqual(before);
   });
 
   // ── available_commands_update ──────────────────────────────────────────────
@@ -1118,7 +1207,7 @@ describe('AcpTranscriptParser – session slices', () => {
     p.reset();
     expect(p.usage).toBeNull();
     expect(p.title).toBeNull();
-    expect(p.config.modelOptions).toBeNull();
+    expect(p.config.options).toBeUndefined();
     expect(p.config.availableCommands).toHaveLength(0);
   });
 
@@ -1129,6 +1218,7 @@ describe('AcpTranscriptParser – session slices', () => {
       configOptionUpdate([
         {
           id: 'model',
+          name: 'model',
           category: 'model',
           type: 'select',
           currentValue: 'haiku',
@@ -1141,7 +1231,9 @@ describe('AcpTranscriptParser – session slices', () => {
 
     const result = AcpTranscriptParser.replay(updates as Iterable<SessionUpdate>, deps());
     expect(result.active).toBeNull();
-    expect(result.config.modelOptions?.selected).toBe('haiku');
+    expect(result.config.options?.find((option) => option.category === 'model')?.currentValue).toBe(
+      'haiku'
+    );
     expect(result.usage?.contextUsed).toBe(500);
     expect(result.title).toBe('Replay title');
   });

@@ -14,9 +14,10 @@ import { deleteProject, type ProjectDeletionDependencies } from './operations/de
 import { ensureDefaultRepositoriesRoot } from './operations/ensure-default-repositories-root';
 import { getProjects } from './operations/getProjects';
 import { initializeRepository } from './operations/initialize-repository';
+import { renameProject } from './operations/renameProject';
 import { resolveRepositoryDestination } from './operations/resolve-repository-destination';
 import { updateProjectConnection } from './operations/updateProjectConnection';
-import { countProjectsUsingGithubAccount } from './settings/count-projects-using-github-account';
+import { countProjectsUsingProviderAccount } from './settings/count-projects-using-provider-account';
 
 export type ProjectOperationDependencies = CreateProjectDependencies & {
   placement: WorkspacePlacementResolver;
@@ -54,9 +55,10 @@ export function createProjectOperations(dependencies: ProjectOperationDependenci
       projectSettings.shareProjectSettingsToConfig(projectId, request),
     migrateProjectConfig: (projectId: string, request: MigrateProjectConfigRequest) =>
       projectSettings.migrateProjectConfig(projectId, request),
-    countProjectsUsingGithubAccount: (accountId: string) =>
-      countProjectsUsingGithubAccount(db, accountId),
+    countProjectsUsingProviderAccount: (providerId: string, accountId: string) =>
+      countProjectsUsingProviderAccount(db, providerId, accountId),
     updateProjectConnection: (projectId: string, connectionId: string) =>
       updateProjectConnection(db, dependencies.runtimes, projects, projectId, connectionId),
+    renameProject: (projectId: string, name: string) => renameProject(db, projectId, name),
   };
 }

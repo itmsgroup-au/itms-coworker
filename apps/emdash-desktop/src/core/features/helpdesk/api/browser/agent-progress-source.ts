@@ -1,6 +1,5 @@
 import {
   sessionStateSchema,
-  transcriptTurnSchema,
   type SessionState,
   type TranscriptTurn,
 } from '@emdash/core/runtimes/acp/api/client';
@@ -29,8 +28,6 @@ const HISTORY_PAGE_LIMIT = 50;
 /** How long a source survives with no subscribers, so remounts do not reconnect. */
 const RELEASE_LINGER_MS = 30_000;
 const REMOTE_LINGER_MS = 15_000;
-
-const nullableTurnSchema = transcriptTurnSchema.nullable();
 
 type ConversationProgress = {
   state: SessionState | null;
@@ -175,23 +172,14 @@ class TaskAgentProgressSource {
         (snapshot) => {
           if (snapshot.value === undefined) return;
           const state = sessionStateSchema.parse(snapshot.value);
-          this.progressFor(conversationId).state = state;
-          this.recompute();
-          if (isLive(state)) void this.loadHistory(conversationId);
-        },
-        { scope, immediate: true }
-      );
-      observe(
-        member.states.activeTurn,
-        (snapshot) => {
-          if (snapshot.value === undefined) return;
-          const turn = nullableTurnSchema.parse(snapshot.value);
           const progress = this.progressFor(conversationId);
+          const turn = state.transcript?.activeTurn ?? null;
           const settled = progress.activeTurn !== null && turn === null;
+          progress.state = state;
           progress.activeTurn = turn;
           this.recompute();
-          // The settled turn has just moved into history; pick it up there.
-          if (settled) void this.loadHistory(conversationId, true);
+          // A settled turn has just moved into history; pick it up there.
+          if (isLive(state)) void this.loadHistory(conversationId, settled);
         },
         { scope, immediate: true }
       );
@@ -214,7 +202,7 @@ class TaskAgentProgressSource {
       const client = (await getConversationsClient()).acp;
       if (this.disposed) return;
       const result = await client.loadHistory({ conversationId, limit: HISTORY_PAGE_LIMIT });
-      if (this.disposed || !result.success || result.data.unavailable) return;
+      if (this.disposed || !result.success || result.data.kind !== 'available') return;
       this.progressFor(conversationId).history = result.data.turns;
       this.recompute();
     } catch {

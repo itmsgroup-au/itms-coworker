@@ -37,6 +37,9 @@ vi.mock('@renderer/lib/layout/workspace-layout', () => ({
   ),
 }));
 vi.mock('@emdash/ui/react/primitives', () => ({ Toaster: () => null }));
+vi.mock('@core/features/helpdesk/contributions/browser/status-bar', () => ({
+  CoWorkerStatusBar: () => null,
+}));
 
 import { Workspace } from '@renderer/app/workspace';
 

@@ -15,13 +15,13 @@ export type {
   TranscriptTurnInitiator,
   TranscriptTurnOutcome,
   ToolCallItem,
+  ToolCallLocation,
   ToolGroup,
   ToolNode,
   ToolStatus,
   UnknownToolCall,
   WebFetchToolCall,
 } from '../models/turns';
-export type { AttachmentRef } from '../models/attachments';
 export type { AgentState } from '../models/agents';
 export type {
   PlanEntry,
@@ -35,6 +35,7 @@ export type {
   EnrichHook,
   NormalizedDiff,
   NormalizedEvent,
+  NormalizedToolLocation,
   NormalizedToolStatus,
 } from './normalized-event';
 
@@ -51,13 +52,5 @@ export {
 export { AcpTranscriptParser } from './parser';
 export type { AcpTranscriptParserDeps, ReplayEntry, ReplayResult } from './parser';
 
-export type {
-  EffortOption,
-  ModeOption,
-  ModelChoice,
-  ModelOption,
-  SessionCommand,
-  SessionConfigState,
-  SessionUsage,
-} from '../models/config';
+export type { SessionCommand, SessionConfigState, SessionUsage } from '../models/config';
 export { initialSessionConfigState } from '../models/config';

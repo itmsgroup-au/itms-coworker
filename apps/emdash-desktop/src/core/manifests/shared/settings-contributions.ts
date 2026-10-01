@@ -3,6 +3,7 @@ import {
   browserPreviewSettingsContribution,
   browserSettingsContribution,
 } from '@core/features/browser/contributions/settings';
+import { preferredConversationTypeSettingsContribution } from '@core/features/conversations/contributions/settings';
 import { filesSettingsContribution } from '@core/features/editor/contributions/settings';
 import { helpdeskSettingsContribution } from '@core/features/helpdesk/contributions/settings';
 import { odooSettingsContribution } from '@core/features/odoo/contributions/settings';
@@ -37,6 +38,7 @@ export const appSettingsSchemaContributions = {
   tasks: taskSettingsContribution,
   files: filesSettingsContribution,
   defaultAgent: defaultAgentSettingsContribution,
+  preferredConversationType: preferredConversationTypeSettingsContribution,
   keyboard: keyboardSettingsContribution,
   notifications: notificationSettingsContribution,
   theme: themeSettingsContribution,

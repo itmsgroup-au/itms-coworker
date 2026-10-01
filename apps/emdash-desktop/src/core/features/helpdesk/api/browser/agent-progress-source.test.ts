@@ -12,12 +12,12 @@ function push(target: FakeCell, value: unknown): void {
   for (const listener of target.listeners) listener({ value });
 }
 
-const sessionCells = new Map<string, { state: FakeCell; activeTurn: FakeCell }>();
+const sessionCells = new Map<string, { state: FakeCell }>();
 
-function sessionCellsFor(conversationId: string): { state: FakeCell; activeTurn: FakeCell } {
+function sessionCellsFor(conversationId: string): { state: FakeCell } {
   const existing = sessionCells.get(conversationId);
   if (existing) return existing;
-  const created = { state: cell(undefined), activeTurn: cell(undefined) };
+  const created = { state: cell(undefined) };
   sessionCells.set(conversationId, created);
   return created;
 }
@@ -65,23 +65,6 @@ const acpConversation = {
   type: 'acp',
 };
 
-function sessionState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    lifecycle: 'working',
-    activeTurnId: 'turn-1',
-    pendingPermissions: [],
-    lastStopReason: null,
-    lastTurnErrored: false,
-    queuedPrompts: [],
-    agentTurnActive: false,
-    backgroundAgentCount: 0,
-    isGenerating: true,
-    canSubmit: false,
-    canCancel: true,
-    ...overrides,
-  };
-}
-
 const activeTurn = {
   id: 'turn-1',
   seq: 1,
@@ -99,13 +82,42 @@ const activeTurn = {
   ],
 };
 
+function sessionState(
+  overrides: Record<string, unknown> = {},
+  turn: unknown = activeTurn
+): Record<string, unknown> {
+  return {
+    lifecycle: 'working',
+    activeTurnId: turn ? 'turn-1' : null,
+    transcript: {
+      generation: 'g1',
+      historyRevision: 0,
+      lastCommittedTurnSeq: null,
+      activeTurn: turn,
+    },
+    pendingPermissions: [],
+    lastStopReason: null,
+    lastTurnErrored: false,
+    queuedPrompts: [],
+    agentTurnActive: false,
+    backgroundAgentCount: 0,
+    isGenerating: true,
+    canSubmit: false,
+    canCancel: true,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   sessionCells.clear();
   getConversations.mockReset();
   loadHistory.mockReset();
   subscribeEvents.mockClear();
   getConversations.mockResolvedValue([acpConversation]);
-  loadHistory.mockResolvedValue({ success: true, data: { turns: [], nextCursor: null } });
+  loadHistory.mockResolvedValue({
+    success: true,
+    data: { kind: 'available', turns: [], nextCursor: null },
+  });
 });
 
 afterEach(() => {
@@ -124,7 +136,6 @@ describe('task agent progress source', () => {
 
     const cells = sessionCellsFor(CONVERSATION_ID);
     push(cells.state, sessionState());
-    push(cells.activeTurn, activeTurn);
     await settle();
 
     const progress = getTaskProgressSnapshot(TASK_ID);
@@ -142,6 +153,7 @@ describe('task agent progress source', () => {
     loadHistory.mockResolvedValue({
       success: true,
       data: {
+        kind: 'available',
         turns: [
           {
             id: 'turn-0',
@@ -168,7 +180,6 @@ describe('task agent progress source', () => {
 
     const cells = sessionCellsFor(CONVERSATION_ID);
     push(cells.state, sessionState());
-    push(cells.activeTurn, activeTurn);
     await vi.waitFor(() => expect(getTaskProgressSnapshot(TASK_ID).steps).toHaveLength(2));
 
     expect(getTaskProgressSnapshot(TASK_ID).steps.map((step) => step.id)).toEqual([
@@ -183,8 +194,10 @@ describe('task agent progress source', () => {
     await vi.waitFor(() => expect(sessionCells.has(CONVERSATION_ID)).toBe(true));
 
     const cells = sessionCellsFor(CONVERSATION_ID);
-    push(cells.state, sessionState({ lifecycle: 'closed', suspended: true, isGenerating: false }));
-    push(cells.activeTurn, null);
+    push(
+      cells.state,
+      sessionState({ lifecycle: 'closed', suspended: true, isGenerating: false }, null)
+    );
     await settle();
 
     expect(loadHistory).not.toHaveBeenCalled();

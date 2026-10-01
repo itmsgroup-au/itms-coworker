@@ -1,7 +1,8 @@
 # ITMS CoWorker: how to work on this fork
 
 This is ITMS Group's fork of Emdash (generalaction/emdash, Apache 2.0, forked at
-v1.2.3 on 4 September 2026). Upstream stays as the `upstream` git remote; `origin`
+v1.2.3 on 4 September 2026, upstream merged through v1.2.7+26 `b179913b8`). Upstream
+stays as the `upstream` git remote; `origin`
 is github.com/itmsgroup-au/itms-coworker. Everything ITMS adds is small and named,
 so upstream can be merged in for as long as the diff stays small.
 

@@ -92,8 +92,9 @@ import { desktopDomainContracts } from '@core/manifests/shared/domain-contracts'
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import type { TelemetryService } from '@core/primitives/telemetry/api/telemetry';
 import type { AppDb } from '@core/services/app-db/node/db';
-import type { HostService } from '@core/services/hosts/node';
+import type { TerminalFileSources } from '@core/services/attachments/node/prepare-terminal-files';
 import type { HostAvailabilityService } from '@core/services/hosts/node/availability';
+import type { Hosts } from '@core/services/hosts/node/hosts';
 import { createHostsWireController } from '@core/services/hosts/node/wire-controller';
 import {
   createLoggingWireController,
@@ -125,7 +126,7 @@ export type DesktopControllerContext = {
   readonly db: AppDb;
   readonly devPerfOperations: DevPerfOperations;
   readonly editorBuffer: EditorBufferService;
-  readonly github: Omit<Parameters<typeof createGithubWireController>[0], 'logger' | 'telemetry'>;
+  readonly github: Omit<Parameters<typeof createGithubWireController>[0], 'logger'>;
   readonly gitCredentials: GitCredentialsService;
   readonly hostAvailability: HostAvailabilityService;
   readonly hostIsReachable: HostReachabilityProbe;
@@ -142,7 +143,7 @@ export type DesktopControllerContext = {
   readonly projectSettings: ProjectSettingsService;
   readonly providerSettings: ProviderOverrideSettings;
   readonly reconcileSweep: ReconcileSweepHandle;
-  readonly hosts: HostService;
+  readonly hosts: Hosts;
   readonly runtimeClients: {
     getMementosRuntimeClient(): Promise<MementosRuntimeClient>;
     getPullRequestsRuntimeClient(): Promise<PullRequestsRuntimeClient>;
@@ -156,6 +157,7 @@ export type DesktopControllerContext = {
   readonly telemetry: TelemetryService;
   readonly taskService: TaskService;
   readonly taskSessions: TaskSessionManager;
+  readonly terminalFileSources: TerminalFileSources;
   readonly terminalShell: CreateTerminalsWireControllerOptions['terminalShell'];
   readonly updateOperations: UpdateOperations;
   readonly workspaceIdentity: WorkspaceIdentityService;
@@ -271,6 +273,7 @@ export const desktopNodeControllers = {
     create: ({
       appSettings,
       db,
+      terminalFileSources,
       gitCredentials,
       logger,
       projects,
@@ -281,6 +284,7 @@ export const desktopNodeControllers = {
       workspaceIdentity,
     }) =>
       createTerminalsWireController({
+        terminalFileSources,
         db,
         projects,
         runtimes,
@@ -382,6 +386,7 @@ export const desktopNodeControllers = {
     create: ({
       compensation,
       db,
+      terminalFileSources,
       hostIsReachable,
       logger,
       projects,
@@ -393,6 +398,7 @@ export const desktopNodeControllers = {
       workspaceIdentity,
     }) =>
       createConversationsWireController({
+        terminalFileSources,
         db,
         logger,
         projects,
@@ -410,8 +416,7 @@ export const desktopNodeControllers = {
     create: ({ previewServerAccess }) => createPreviewServersWireController(previewServerAccess),
   },
   github: {
-    create: ({ github, logger, telemetry }) =>
-      createGithubWireController({ ...github, logger, telemetry }),
+    create: ({ github, logger }) => createGithubWireController({ ...github, logger }),
   },
   integrations: {
     create: () => createIntegrationsWireController(),

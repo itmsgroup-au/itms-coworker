@@ -58,6 +58,7 @@ const mocks = vi.hoisted(() => ({
   navigationNavigate: vi.fn(),
   taskListLoad: vi.fn(),
   taskProvision: vi.fn(),
+  renameProject: vi.fn(),
   updateProjectConnection: vi.fn(),
   updateProjectSettings: vi.fn(),
 }));
@@ -237,6 +238,7 @@ function createProjectWire() {
         error: { type: 'unused', message: 'unused' },
       }),
     },
+    renameProject: (input: unknown) => mocks.renameProject(input),
     updateProjectConnection: (input: unknown) => mocks.updateProjectConnection(input),
     updateProjectSettings: (input: unknown) => mocks.updateProjectSettings(input),
     delete: (input: unknown) => mocks.projectWireDelete(input),
@@ -304,6 +306,7 @@ describe('ProjectManagerStore project creation', () => {
     mocks.mementoSubjectRelease.mockResolvedValue(undefined);
     mocks.taskListLoad.mockResolvedValue(undefined);
     mocks.taskProvision.mockResolvedValue(undefined);
+    mocks.renameProject.mockResolvedValue(undefined);
     mocks.updateProjectConnection.mockResolvedValue(undefined);
     mocks.projectWireProgressCallbacks.length = 0;
     mocks.projectWireCancel.mockResolvedValue(undefined);
@@ -773,7 +776,7 @@ describe('ProjectManagerStore project creation', () => {
     expect(mocks.mementoSubjectRelease).toHaveBeenCalledOnce();
   });
 
-  it('publishes typed desktop context failure without tracking attachment', async () => {
+  it('logs and publishes typed desktop context failure without tracking attachment', async () => {
     const project = localProject();
     mocks.mementoSubject.mockReturnValue({
       ready: Promise.reject(new Error('memento unavailable')),
@@ -796,6 +799,14 @@ describe('ProjectManagerStore project creation', () => {
       })
     );
     expect(mocks.attachmentTrack).not.toHaveBeenCalled();
+    expect(mocks.logError).toHaveBeenCalledWith('Failed to hydrate Project context', {
+      projectId: project.id,
+      error: {
+        type: 'context-initialization-failed',
+        stage: 'memento',
+        message: 'memento unavailable',
+      },
+    });
   });
 
   it('preserves desktop context and record identity when relinking a project', async () => {
@@ -825,6 +836,38 @@ describe('ProjectManagerStore project creation', () => {
     expect(projectStore.context).toEqual({ kind: 'available', context });
     expect(context.project).toBe(record);
     expect(record.type === 'ssh' ? record.connectionId : null).toBe('ssh-2');
+  });
+
+  it('renames a project in place without replacing its store or context', async () => {
+    const project = sshProject();
+    projectListState.set({ projects: [project] });
+    const store = new ProjectManagerStore();
+    await store.load();
+    await vi.waitFor(() => expect(store.projects.get(project.id)?.context?.kind).toBe('available'));
+    const projectStore = store.projects.get(project.id)!;
+    const lifecycle = projectStore.context;
+    if (lifecycle?.kind !== 'available') throw new Error('Expected available context');
+    const record = lifecycle.context.project;
+
+    await store.renameProject(project.id, 'Renamed');
+
+    expect(mocks.renameProject).toHaveBeenCalledWith({ projectId: project.id, name: 'Renamed' });
+    expect(store.projects.get(project.id)).toBe(projectStore);
+    expect(projectStore.name).toBe('Renamed');
+    expect(projectStore.data?.name).toBe('Renamed');
+    expect(lifecycle.context.project).toBe(record);
+    expect(record.name).toBe('Renamed');
+  });
+
+  it('leaves the store untouched when the rename request fails', async () => {
+    const project = sshProject();
+    projectListState.set({ projects: [project] });
+    const store = new ProjectManagerStore();
+    await store.load();
+    mocks.renameProject.mockRejectedValueOnce(new Error('Project not found'));
+
+    await expect(store.renameProject(project.id, 'Renamed')).rejects.toThrow('Project not found');
+    expect(store.projects.get(project.id)?.name).toBe(project.name);
   });
 
   it('inspects the final clone path instead of the parent directory', async () => {
@@ -1083,7 +1126,7 @@ describe('ProjectManagerStore project creation', () => {
     expect(store.projects.has('optimistic-project')).toBe(true);
   });
 
-  it('persists the selected GitHub account after creating the project', async () => {
+  it('carries the selected account into clone authentication and atomic project registration', async () => {
     const store = new ProjectManagerStore();
 
     const result = await store.startProjectCreation(
@@ -1102,16 +1145,13 @@ describe('ProjectManagerStore project creation', () => {
 
     if (result.kind === 'creating') await result.completion;
 
-    expect(mocks.updateProjectSettings).toHaveBeenCalledWith({
-      projectId: 'optimistic-project',
-      patch: {
-        gitIdentity: {
-          stored: {
-            githubAccount: { kind: 'account', accountId: 'github.com:42' },
-          },
-        },
-      },
-    });
+    expect(mocks.projectWireCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: { providerId: 'github', accountId: 'github.com:42' },
+        initialIntegrationAccounts: { github: { kind: 'account', accountId: 'github.com:42' } },
+      })
+    );
+    expect(mocks.updateProjectSettings).not.toHaveBeenCalled();
     await vi.waitFor(() =>
       expect(store.projects.get('optimistic-project')?.context?.kind).toBe('available')
     );
@@ -1210,7 +1250,7 @@ describe('ProjectManagerStore project creation', () => {
     }
   });
 
-  it('persists the default GitHub account after initializing a picked folder', async () => {
+  it('includes initial account preferences when registering a newly initialized folder', async () => {
     mocks.createProject.mockResolvedValueOnce(
       okProject(localProject({ id: 'optimistic-project' }))
     );
@@ -1230,16 +1270,12 @@ describe('ProjectManagerStore project creation', () => {
 
     if (result.kind === 'creating') await result.completion;
 
-    expect(mocks.updateProjectSettings).toHaveBeenCalledWith({
-      projectId: 'optimistic-project',
-      patch: {
-        gitIdentity: {
-          stored: {
-            githubAccount: { kind: 'account', accountId: 'github.com:42' },
-          },
-        },
-      },
-    });
+    expect(mocks.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialIntegrationAccounts: { github: { kind: 'account', accountId: 'github.com:42' } },
+      })
+    );
+    expect(mocks.updateProjectSettings).not.toHaveBeenCalled();
   });
 
   it('does not persist a GitHub account for picked repositories that were already git repos', async () => {

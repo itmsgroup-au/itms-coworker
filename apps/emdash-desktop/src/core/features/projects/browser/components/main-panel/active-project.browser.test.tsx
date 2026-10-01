@@ -23,6 +23,14 @@ vi.mock('@core/primitives/navigation/browser/navigation-hooks', () => ({
   useCurrentViewParams: () => ({ params: { projectId: 'project-1' } }),
 }));
 
+vi.mock('@core/features/workbench/api/browser/mode-developer-surfaces', () => ({
+  useDeveloperSurfaces: () => ({
+    showSourceControl: true,
+    showPullRequests: true,
+    showWorktrees: true,
+  }),
+}));
+
 vi.mock('@core/features/projects/browser/components/pr-view/pr-view', () => ({
   PullRequestView: () => <div>Pull requests panel</div>,
 }));

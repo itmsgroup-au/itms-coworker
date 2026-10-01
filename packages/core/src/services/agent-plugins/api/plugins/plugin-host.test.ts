@@ -120,11 +120,21 @@ describe('AgentPluginHost', () => {
         env: { COMMAND_ENV: '1' },
       })
     );
-    const host = createHost([
-      plugin({
-        behavior: { prompt: { buildCommand } },
-      }),
-    ]);
+    const host = createHost(
+      [
+        plugin({
+          behavior: { prompt: { buildCommand } },
+        }),
+      ],
+      async () => ({
+        HOME: '/home/test',
+        PATH: '/bin',
+        XDG_CACHE_HOME: '/home/test/.cache',
+        XDG_CONFIG_HOME: '/home/test/.config',
+        XDG_DATA_HOME: '/home/test/.local/share',
+        XDG_STATE_HOME: '/home/test/.local/state',
+      })
+    );
 
     const result = await host.buildPromptCommand('test', {
       autoApprove: false,
@@ -140,6 +150,10 @@ describe('AgentPluginHost', () => {
           HOME: '/home/test',
           PATH: '/bin',
           COMMAND_ENV: '1',
+          XDG_CACHE_HOME: '/home/test/.cache',
+          XDG_CONFIG_HOME: '/home/test/.config',
+          XDG_DATA_HOME: '/home/test/.local/share',
+          XDG_STATE_HOME: '/home/test/.local/state',
         }),
       },
     });
@@ -208,6 +222,36 @@ describe('AgentPluginHost', () => {
     expect(Object.keys(result.data.env).filter((key) => key.toLowerCase() === 'path')).toEqual([
       'PATH',
     ]);
+  });
+
+  it('passes the OrcaRouter API key from the host environment to spawned agents', async () => {
+    const buildSpawn = vi.fn(() => ({ command: 'test', args: [], cwd: '/work' }));
+    const host = createHost(
+      [
+        plugin({
+          acp: { kind: 'supported' },
+          behavior: { acp: { buildSpawn } as unknown as IAcpBehavior },
+        }),
+      ],
+      async () => ({
+        HOME: '/home/test',
+        PATH: '/bin',
+        ORCAROUTER_API_KEY: 'sk-orca-test',
+      })
+    );
+
+    const result = await host.buildAcpSpawn('test', {
+      cwd: '/work',
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        env: expect.objectContaining({
+          ORCAROUTER_API_KEY: 'sk-orca-test',
+        }),
+      },
+    });
   });
 
   it('binds machine dependencies for auth status checks', async () => {

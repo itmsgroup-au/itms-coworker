@@ -28,11 +28,18 @@ export type NormalizedDiff = {
   newText: string;
 };
 
+export type NormalizedToolLocation = {
+  path: string;
+  line?: number;
+};
+
 export type NormalizedToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export type NormalizedEvent =
+  | { kind: 'mcp_startup_failure'; server: string; error: string }
   | {
       kind: 'message';
+      promptId?: string;
       role: 'user' | 'assistant';
       messageId: string | null;
       text: string;
@@ -51,12 +58,14 @@ export type NormalizedEvent =
       status: NormalizedToolStatus | null;
       parentToolCallId: string | null;
       diffs: NormalizedDiff[];
+      locations: NormalizedToolLocation[];
       inputSummary?: string;
       outputText?: string;
       terminalId?: string;
     }
   | {
       kind: 'subagent';
+      operation?: 'start' | 'update';
       toolCallId: string;
       title: string;
       status: NormalizedToolStatus | null;
@@ -76,6 +85,7 @@ export type NormalizedEvent =
     }
   | {
       kind: 'search';
+      operation?: 'start' | 'update';
       toolCallId: string;
       query: string;
       status: NormalizedToolStatus | null;
@@ -84,6 +94,7 @@ export type NormalizedEvent =
     }
   | {
       kind: 'mcp_tool';
+      operation?: 'start' | 'update';
       toolCallId: string;
       server?: string;
       tool: string;
@@ -93,6 +104,7 @@ export type NormalizedEvent =
     }
   | {
       kind: 'web_fetch';
+      operation?: 'start' | 'update';
       toolCallId: string;
       url: string;
       title?: string;
@@ -102,11 +114,15 @@ export type NormalizedEvent =
   | {
       kind: 'tool_update';
       toolCallId: string;
-      title: string | null;
-      toolKind: string | null;
-      status: NormalizedToolStatus | null;
+      title?: string | null;
+      toolKind?: string | null;
+      status?: NormalizedToolStatus | null;
       parentToolCallId: string | null;
-      diffs: NormalizedDiff[];
+      /** Present only when ACP supplied content; an empty array explicitly clears prior diffs. */
+      diffs?: NormalizedDiff[];
+      /** Present only when ACP supplied locations; an empty array explicitly clears them. */
+      locations?: NormalizedToolLocation[];
+      inputSummary?: string;
       outputText?: string;
       terminalId?: string;
     }
@@ -117,10 +133,6 @@ export type NormalizedEvent =
   | {
       kind: 'config';
       options: ReadonlyArray<SessionConfigOption>;
-    }
-  | {
-      kind: 'mode_selected';
-      modeId: string;
     }
   | {
       kind: 'commands';

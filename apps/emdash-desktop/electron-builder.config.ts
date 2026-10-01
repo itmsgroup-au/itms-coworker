@@ -2,6 +2,7 @@ import type { Configuration } from 'electron-builder';
 import {
   APP_ID,
   ARTIFACT_PREFIX,
+  LINUX_DESKTOP_ID,
   PRODUCT_NAME,
 } from './src/core/primitives/app-identity/api/app-identity.ts';
 
@@ -9,6 +10,7 @@ const config: Configuration = {
   appId: APP_ID,
   productName: PRODUCT_NAME,
   executableName: PRODUCT_NAME,
+  extraMetadata: { desktopName: `${LINUX_DESKTOP_ID}.desktop` },
   directories: { output: 'release' },
   artifactName: `${ARTIFACT_PREFIX}-\${arch}.\${ext}`,
   // Fork: no publish target. Upstream's GitHub releases and R2 channel must never update this build.
@@ -30,6 +32,8 @@ const config: Configuration = {
     extendInfo: {
       NSMicrophoneUsageDescription:
         'Emdash needs microphone access for voice dictation and voice mode features.',
+      NSLocalNetworkUsageDescription:
+        'Emdash needs local network access to connect to SSH hosts on your network.',
     },
     target: [
       { target: 'dmg', arch: ['arm64'] },
@@ -50,6 +54,10 @@ const config: Configuration = {
   linux: {
     category: 'Development',
     icon: 'src/assets/images/emdash/emdash.png',
+    syncDesktopName: true,
+    desktop: {
+      entry: { StartupWMClass: PRODUCT_NAME },
+    },
     target: [
       { target: 'AppImage', arch: ['x64'] },
       { target: 'deb', arch: ['x64'] },

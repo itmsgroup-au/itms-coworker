@@ -2,8 +2,11 @@ import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: {
+    'services-attachments-node': 'src/services/attachments/node/local-attachment-store.ts',
+    'services-attachments-api': 'src/services/attachments/api/index.ts',
     'primitives-path-api': 'src/primitives/path/api/index.ts',
     'primitives-host-api': 'src/primitives/host/api/index.ts',
+    'primitives-git-api': 'src/primitives/git/api/index.ts',
     'primitives-git-credentials-api': 'src/primitives/git-credentials/api/index.ts',
     'primitives-exclusion-policy-api': 'src/primitives/exclusion-policy/api/index.ts',
     'primitives-skills-api': 'src/primitives/skills/api/index.ts',
