@@ -35,13 +35,14 @@ export const TicketDetail = observer(function TicketDetail({
   ticket,
   assignment,
   onClose,
-  onAssign,
+  startForm,
 }: {
   profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
   onClose: () => void;
-  onAssign: () => void;
+  /** The worker picker and Start button, shown on the Agent tab while no agent is on the ticket. */
+  startForm: React.ReactNode;
 }) {
   const [tab, setTab] = useState<Tab>(assignment ? 'agent' : 'thread');
   useEffect(() => {
@@ -103,7 +104,7 @@ export const TicketDetail = observer(function TicketDetail({
       >
         {tab === 'thread' && <ThreadTab profile={profile} ticket={ticket} />}
         {tab === 'agent' && (
-          <AgentTab profile={profile} ticket={ticket} assignment={assignment} onAssign={onAssign} />
+          <AgentTab profile={profile} ticket={ticket} assignment={assignment} startForm={startForm} />
         )}
       </div>
     </div>
@@ -224,11 +225,13 @@ const AgentTab = observer(function AgentTab({
   profile,
   ticket,
   assignment,
+  startForm,
 }: {
   profile: OdooProfileSummary;
   ticket: HelpdeskTicket;
   assignment: HelpdeskAssignment | null;
-  onAssign: () => void;
+  /** The worker picker and Start button, shown on the Agent tab while no agent is on the ticket. */
+  startForm: React.ReactNode;
 }) {
   const { navigate } = useNavigate();
   const [chatStore, setChatStore] = useState<AcpChatStore | null>(null);
@@ -242,7 +245,10 @@ const AgentTab = observer(function AgentTab({
 
   if (!assignment) {
     return (
-      <div className="px-4 py-4 text-xs text-foreground-muted">No agent is on this ticket yet.</div>
+      <div className="flex flex-col gap-3 px-4 py-4">
+        <div className="text-sm">No agent is on this ticket yet.</div>
+        {startForm}
+      </div>
     );
   }
 

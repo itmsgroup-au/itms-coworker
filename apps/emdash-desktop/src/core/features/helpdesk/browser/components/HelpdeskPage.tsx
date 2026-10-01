@@ -312,7 +312,9 @@ const TicketList = observer(function TicketList({
               ticket={selectedTicket}
               assignment={assignments[assignmentKey(profile.id, selectedTicket.id)] ?? null}
               onClose={() => onSelect(null)}
-              onAssign={() => void launcher.start(selectedTicket)}
+              startForm={
+                <AssignForm profile={profile} ticket={selectedTicket} launcher={launcher} />
+              }
             />
           ) : null
         }
@@ -790,19 +792,36 @@ function ProviderName({ id }: { id: string }) {
 // Options row: the advanced path, for choosing the worker and the project
 // ---------------------------------------------------------------------------
 
-const AssignRow = observer(function AssignRow({
+const AssignRow = observer(function AssignRow(props: AssignFormProps) {
+  return (
+    <tr
+      className="border-b border-border bg-background-secondary/40"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <td colSpan={7} className="px-3 py-3">
+        <AssignForm {...props} />
+      </td>
+    </tr>
+  );
+});
+
+type AssignFormProps = {
+  profile: OdooProfileSummary;
+  ticket: HelpdeskTicket;
+  launcher: TicketAgentLauncher;
+  /** Shown as a Cancel button when given; the detail pane has nothing to cancel. */
+  onCancel?: () => void;
+  onStarted?: () => void;
+};
+
+/** Choose a worker and the project it runs in, then start it on the ticket. */
+export const AssignForm = observer(function AssignForm({
   profile,
   ticket,
   launcher,
   onCancel,
   onStarted,
-}: {
-  profile: OdooProfileSummary;
-  ticket: HelpdeskTicket;
-  launcher: TicketAgentLauncher;
-  onCancel: () => void;
-  onStarted: () => void;
-}) {
+}: AssignFormProps) {
   const projects = useProjectOptions();
   const paired = projects.find((p) => p.path.endsWith(`odoo-${profile.id}`)) ?? projects[0];
   const [projectId, setProjectId] = useState<string | undefined>(paired?.id);
@@ -823,15 +842,11 @@ const AssignRow = observer(function AssignRow({
       projectId,
       supportsAcp: option?.supportsAcp,
     });
-    if (started) onStarted();
+    if (started) onStarted?.();
   };
 
   return (
-    <tr
-      className="border-b border-border bg-background-secondary/40"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <td colSpan={7} className="px-3 py-3">
+    <div>
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Worker">
             <AgentSelector
@@ -860,10 +875,17 @@ const AssignRow = observer(function AssignRow({
             </Select.Root>
           </Field>
           <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={() => void start()} disabled={busy || !effectiveProvider}>
+            {onCancel && (
+              <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => void start()}
+              disabled={busy || !effectiveProvider}
+            >
               {busy ? (startingStep ?? 'Starting…') : 'Start on this ticket'}
             </Button>
           </div>
@@ -875,8 +897,7 @@ const AssignRow = observer(function AssignRow({
           The worker reads the ticket from Odoo, investigates, and reports back in its task. It does
           not change the ticket or send anything without asking.
         </div>
-      </td>
-    </tr>
+    </div>
   );
 });
 
