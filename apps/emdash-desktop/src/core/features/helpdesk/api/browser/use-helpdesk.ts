@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { getOdooClient } from '@core/features/odoo/api/browser/client';
 import type {
   HelpdeskMessage,
-  HelpdeskRelated,
   HelpdeskTeam,
   HelpdeskTicket,
   OdooProfileSummary,
@@ -62,18 +61,6 @@ export function useHelpdeskMessages(profile: OdooProfileSummary | null, ticketId
       return (await getOdooClient()).helpdeskMessages({ profileId: profile.id, ticketId });
     },
     staleTime: 30 * 1000,
-  });
-}
-
-export function useHelpdeskRelated(profile: OdooProfileSummary | null, ticketId: number | null) {
-  return useQuery<HelpdeskRelated, Error>({
-    queryKey: [...HELPDESK_QUERY_KEY, 'related', profile?.id ?? 'none', ticketId ?? 0],
-    enabled: !!profile && ticketId !== null,
-    queryFn: async () => {
-      if (!profile || ticketId === null) throw new Error('No ticket');
-      return (await getOdooClient()).helpdeskRelated({ profileId: profile.id, ticketId });
-    },
-    staleTime: 5 * 60 * 1000,
   });
 }
 

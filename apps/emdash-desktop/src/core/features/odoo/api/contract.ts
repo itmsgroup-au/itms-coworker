@@ -165,24 +165,6 @@ export type HelpdeskMessage = {
   kind: 'email' | 'message' | 'note';
 };
 
-export type HelpdeskRelatedTicket = {
-  id: number;
-  ref: string;
-  name: string;
-  stage: string;
-  assignee: string;
-  createdAt: string;
-};
-
-export type HelpdeskRelated = {
-  contact: string | null;
-  company: string;
-  email: string;
-  phone: string;
-  openTickets: number;
-  previousTickets: HelpdeskRelatedTicket[];
-};
-
 /** Every procedure names the server by id; the credential never crosses the wire. */
 const profileInput = z.object({ profileId: z.string().min(1) });
 
@@ -316,11 +298,6 @@ export const odooContract = defineContract({
   helpdeskMessages: procedure({
     input: z.object({ profileId: z.string().min(1), ticketId: z.number() }),
     output: z.custom<HelpdeskMessage[]>(),
-  }),
-  /** The customer behind a ticket and their other tickets. */
-  helpdeskRelated: procedure({
-    input: z.object({ profileId: z.string().min(1), ticketId: z.number() }),
-    output: z.custom<HelpdeskRelated>(),
   }),
   /** Add an internal note to a ticket (the app's only Odoo write). */
   helpdeskPostNote: procedure({

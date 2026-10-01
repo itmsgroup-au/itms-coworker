@@ -10,7 +10,6 @@ import {
   ODOO_DEFAULT_LIMIT,
   ODOO_MAX_LIMIT,
   type HelpdeskMessage,
-  type HelpdeskRelated,
   type HelpdeskTeam,
   type HelpdeskTicket,
   type OdooConnectionTestResult,
@@ -781,67 +780,6 @@ export async function helpdeskMessages(
             : 'email',
     };
   });
-}
-
-/** What else the practice knows about the ticket's customer: the contact and their other tickets. */
-export async function helpdeskRelated(
-  profileId: string,
-  ticketId: number
-): Promise<HelpdeskRelated> {
-  const connection = await connect(profileId);
-  const [ticket] = (await executeKwOn(connection, 'helpdesk.ticket', 'read', [[ticketId]], {
-    fields: ['partner_id', 'commercial_partner_id', 'partner_email', 'partner_phone'],
-  })) as Array<Record<string, unknown>>;
-  const partnerId = m2oId((ticket?.partner_id as Many2one) ?? false);
-  const companyId = m2oId((ticket?.commercial_partner_id as Many2one) ?? false) ?? partnerId;
-  if (!companyId) {
-    return {
-      contact: null,
-      company: '',
-      email: '',
-      phone: '',
-      previousTickets: [],
-      openTickets: 0,
-    };
-  }
-  const tickets = (await executeKwOn(
-    connection,
-    'helpdesk.ticket',
-    'search_read',
-    [
-      [
-        ['id', '!=', ticketId],
-        ['partner_id', 'child_of', companyId],
-      ],
-    ],
-    {
-      fields: ['id', 'ticket_ref', 'name', 'stage_id', 'create_date', 'user_id'],
-      order: 'create_date desc',
-      limit: 15,
-    }
-  )) as Array<Record<string, unknown>>;
-  const openCount = (await executeKwOn(connection, 'helpdesk.ticket', 'search_count', [
-    [
-      ['id', '!=', ticketId],
-      ['partner_id', 'child_of', companyId],
-      ['stage_id.fold', '=', false],
-    ],
-  ])) as number;
-  return {
-    contact: m2oName((ticket?.partner_id as Many2one) ?? false) || null,
-    company: m2oName((ticket?.commercial_partner_id as Many2one) ?? false),
-    email: (ticket?.partner_email as string | false) || '',
-    phone: (ticket?.partner_phone as string | false) || '',
-    openTickets: openCount,
-    previousTickets: tickets.map((t) => ({
-      id: t.id as number,
-      ref: (t.ticket_ref as string | false) || String(t.id),
-      name: (t.name as string) ?? '',
-      stage: m2oName(t.stage_id as Many2one),
-      assignee: m2oName(t.user_id as Many2one),
-      createdAt: t.create_date as string,
-    })),
-  };
 }
 
 /** Add an internal note to a ticket. The only write the app makes, and it is a note, not a change. */

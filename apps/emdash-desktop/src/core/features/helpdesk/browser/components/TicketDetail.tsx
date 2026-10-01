@@ -10,7 +10,6 @@ import {
   HELPDESK_QUERY_KEY,
   postHelpdeskNote,
   useHelpdeskMessages,
-  useHelpdeskRelated,
 } from '@core/features/helpdesk/api/browser/use-helpdesk';
 import type {
   HelpdeskMessage,
@@ -29,7 +28,7 @@ import { cn } from '@core/primitives/styling/browser/cn';
 import { AgentProgressList } from './AgentProgress';
 import { lastAssistantText, TicketAgentChat } from './TicketAgentChat';
 
-type Tab = 'thread' | 'customer' | 'agent';
+type Tab = 'thread' | 'agent';
 
 export const TicketDetail = observer(function TicketDetail({
   profile,
@@ -89,9 +88,6 @@ export const TicketDetail = observer(function TicketDetail({
         <TabButton active={tab === 'thread'} onClick={() => setTab('thread')}>
           Thread
         </TabButton>
-        <TabButton active={tab === 'customer'} onClick={() => setTab('customer')}>
-          Customer
-        </TabButton>
         <TabButton active={tab === 'agent'} onClick={() => setTab('agent')}>
           {assignment ? 'Agent' : 'Agent (none)'}
         </TabButton>
@@ -106,7 +102,6 @@ export const TicketDetail = observer(function TicketDetail({
         )}
       >
         {tab === 'thread' && <ThreadTab profile={profile} ticket={ticket} />}
-        {tab === 'customer' && <CustomerTab profile={profile} ticket={ticket} />}
         {tab === 'agent' && (
           <AgentTab profile={profile} ticket={ticket} assignment={assignment} onAssign={onAssign} />
         )}
@@ -209,53 +204,6 @@ function Bubble({
       </div>
       {subject && kind === 'email' && <div className="mb-1 text-xs font-medium">{subject}</div>}
       <div className="text-xs leading-relaxed whitespace-pre-wrap">{body}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Customer: the contact and their other tickets
-// ---------------------------------------------------------------------------
-
-function CustomerTab({ profile, ticket }: { profile: OdooProfileSummary; ticket: HelpdeskTicket }) {
-  const related = useHelpdeskRelated(profile, ticket.id);
-  if (related.isLoading)
-    return <div className="px-4 py-3 text-xs text-foreground-muted">Loading…</div>;
-  if (related.error)
-    return <div className="px-4 py-3 text-xs text-red-600">{related.error.message}</div>;
-  const r = related.data;
-  if (!r) return null;
-  return (
-    <div className="flex flex-col gap-4 px-4 py-3 text-xs">
-      <div className="flex flex-col gap-1">
-        <div className="text-sm font-semibold">
-          {r.company || r.contact || 'No customer on this ticket'}
-        </div>
-        {r.contact && r.contact !== r.company && <div>{r.contact}</div>}
-        {r.email && <div className="text-foreground-muted">{r.email}</div>}
-        {r.phone && <div className="text-foreground-muted">{r.phone}</div>}
-        <div className="text-foreground-muted">
-          {r.openTickets} other open ticket{r.openTickets === 1 ? '' : 's'}
-        </div>
-      </div>
-      <div>
-        <div className="mb-1 text-[11px] font-medium tracking-wide text-foreground-muted uppercase">
-          Previous tickets
-        </div>
-        {r.previousTickets.length === 0 && <div className="text-foreground-muted">None.</div>}
-        <div className="flex flex-col divide-y divide-border rounded-md border border-border">
-          {r.previousTickets.map((t) => (
-            <div key={t.id} className="flex items-center gap-2 px-2 py-1.5">
-              <span className="text-foreground-muted">#{t.ref}</span>
-              <span className="min-w-0 flex-1 truncate" title={t.name}>
-                {t.name}
-              </span>
-              <span className="shrink-0 text-foreground-muted">{t.stage}</span>
-              <span className="shrink-0 text-foreground-muted">{formatDay(t.createdAt)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -466,10 +414,4 @@ function formatDateTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function formatDay(iso: string): string {
-  const d = parseOdooDate(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
 }

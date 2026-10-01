@@ -8,7 +8,6 @@ import {
   fieldsGet,
   helpdeskMessages,
   helpdeskPostNote,
-  helpdeskRelated,
   helpdeskTeams,
   helpdeskTickets,
   listModels,
@@ -43,7 +42,6 @@ export function createOdooWireController(services: OdooHostServices): Controller
     callMethod: (input) => callMethod(input),
     helpdeskTeams: ({ profileId }) => helpdeskTeams(profileId),
     helpdeskMessages: ({ profileId, ticketId }) => helpdeskMessages(profileId, ticketId),
-    helpdeskRelated: ({ profileId, ticketId }) => helpdeskRelated(profileId, ticketId),
     helpdeskPostNote: ({ profileId, ticketId, body }) =>
       helpdeskPostNote(profileId, ticketId, body),
     helpdeskTickets: ({ profileId, teamId, limit }) =>

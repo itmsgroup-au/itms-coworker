@@ -81,12 +81,12 @@ cp -R "release/mac-arm64/ITMS CoWorker.app" /Applications/
   - `contributions/settings.ts`: settings key `helpdesk` holding the assignments
     (`${profileId}:${ticketId}` → project, task, provider).
   - `browser/components/TicketDetail.tsx`: the right pane when a ticket is selected (Thread,
-    Customer, Agent tabs). The Agent tab is a live chat, see below.
+    Agent tabs; the Customer tab was removed 1 Oct 2026). The Agent tab is a live chat, see below.
   - `contributions/browser/status-bar.tsx`: the bottom strip on every view, mounted in
     `src/renderer/app/workspace.tsx`. `contributions/browser/open-count.tsx`: the sidebar badge.
   - `api/browser/use-helpdesk.ts`: react-query hooks over the Odoo wire domain.
   - The Odoo wire domain (`features/odoo`) gained `executeKw`, `helpdeskTeams`,
-    `helpdeskTickets`, `helpdeskMessages`, `helpdeskRelated` and `helpdeskPostNote` (the one
+    `helpdeskTickets`, `helpdeskMessages` and `helpdeskPostNote` (the one
     write: an internal note via `message_post` with `mail.mt_note`); the `uid` is cached per
     profile in `node/odoo-service.ts`.
   - Renderer console errors, crashes and load failures are written to
