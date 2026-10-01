@@ -13,6 +13,7 @@ import type { EmdashAccountService } from '@core/features/account/node/services/
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
+import { createAtlasWireController } from '@core/features/atlas/node/wire-controller';
 import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import { createAutomationsWireController } from '@core/features/automations/node/wire-controller';
 import {
@@ -237,6 +238,9 @@ export const desktopNodeControllers = {
   },
   odoo: {
     create: ({ appSettings, db }) => createOdooWireController({ appSettings, db }),
+  },
+  atlas: {
+    create: () => createAtlasWireController(),
   },
   promptLibrary: {
     create: ({ promptLibrary }) => createPromptLibraryWireController(promptLibrary),

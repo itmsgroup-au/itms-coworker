@@ -1,5 +1,6 @@
 import { accountContract, accountDomain } from '@core/features/account/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
+import { atlasContract, atlasDomain } from '@core/features/atlas/api';
 import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
@@ -68,6 +69,7 @@ export const desktopDomainContracts = {
   [sourceControlDomain]: sourceControlContract,
   [mcpDomain]: mcpContract,
   [odooDomain]: odooContract,
+  [atlasDomain]: atlasContract,
   [skillsDomain]: skillsContract,
   [terminalsDomain]: terminalsContract,
   [mementosDomain]: mementosWireContract,

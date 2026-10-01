@@ -46,6 +46,7 @@ const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('connections'),
   ITMS_SECTION,
   navItemFor('odoo'),
+  navItemFor('atlas'),
 ];
 
 function navItemFor(id: Exclude<SettingsPageTab, 'docs'>): PageNavItem {

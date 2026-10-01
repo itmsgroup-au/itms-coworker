@@ -172,6 +172,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Odoo server profiles the ITMS CoWorker agents work against.',
     keywords: ['odoo', 'erp', 'profile', 'itms', 'database'],
   },
+  {
+    id: 'atlas',
+    label: 'Atlas',
+    tab: 'atlas',
+    description: 'The atlas CLI: health check, client list sync and the 1Password daemon.',
+    keywords: ['atlas', 'cli', '1password', 'serve', 'clients', 'doctor', 'rmm', 'itms'],
+  },
 
   // Repository
   {
